@@ -1179,21 +1179,6 @@ class WebRTCTroubleshooting {
         }, 5000);
     }
     
-    toggleLanguage() {
-        this.language = this.language === 'en' ? 'zh' : 'en';
-        const btn = document.getElementById('languageBtn');
-        btn.textContent = this.language === 'en' ? '🌐 English' : '🌐 中文';
-        
-        // Update UI text based on language
-        this.updateLanguage();
-    }
-    
-    updateLanguage() {
-        // This would update all text in the UI based on the selected language
-        // For now, we'll just show a message
-        this.showMessage(`Language switched to ${this.language === 'en' ? 'English' : 'Chinese'}`, 'info');
-    }
-    
     downloadLogs() {
         // Create a log file with test results
         const logData = {
