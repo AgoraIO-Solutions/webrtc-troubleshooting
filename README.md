@@ -36,8 +36,8 @@ A comprehensive HTML/JavaScript WebRTC troubleshooting tool that helps diagnose 
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
-   cd webrtc_troubleshootingv2
+   git clone https://github.com/AgoraIO-Solutions/webrtc-troubleshooting-demo.git
+   cd webrtc-troubleshooting-demo
    ```
 
 2. **Open in browser**
@@ -132,8 +132,9 @@ The tool provides detailed results for each test:
 
 ### File Structure
 ```
-webrtc_troubleshootingv2/
+webrtc-troubleshooting-demo/
 ├── index.html          # Main HTML file
+├── demo.html           # Demo showcase page
 ├── styles.css          # CSS styles
 ├── app.js             # JavaScript application
 └── README.md          # Documentation
