@@ -219,7 +219,7 @@ header {
     position: relative;
     width: 50px;
     height: 24px;
-    background: #ccc;
+    background: var(--border-color);
     border-radius: 12px;
     transition: background 0.3s ease;
 }
@@ -231,7 +231,7 @@ header {
     left: 2px;
     width: 20px;
     height: 20px;
-    background: white;
+    background: var(--text-color);
     border-radius: 50%;
     transition: transform 0.3s ease;
 }
@@ -251,7 +251,7 @@ header {
 .proxy-modes {
     margin-top: 15px;
     padding-top: 15px;
-    border-top: 1px solid #dee2e6;
+    border-top: 1px solid var(--border-color);
 }
 
 .mode-buttons {
@@ -263,12 +263,13 @@ header {
 
 .mode-btn {
     padding: 8px 16px;
-    border: 2px solid #dee2e6;
-    background: white;
+    border: 2px solid var(--border-color);
+    background: var(--dark-surface);
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.3s ease;
     font-size: 12px;
+    color: var(--text-color);
 }
 
 .mode-btn:hover {
@@ -306,7 +307,7 @@ header {
     left: 40px;
     right: 40px;
     height: 2px;
-    background: #dee2e6;
+    background: var(--border-color);
     z-index: 1;
 }
 
@@ -323,8 +324,8 @@ header {
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: #dee2e6;
-    color: white;
+    background: var(--border-color);
+    color: var(--text-color);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -345,7 +346,7 @@ header {
 .step-title {
     font-size: 12px;
     text-align: center;
-    color: #6c757d;
+    color: var(--text-secondary);
     font-weight: 500;
 }
 
@@ -396,7 +397,7 @@ header {
 .volume-bar {
     width: 100%;
     height: 20px;
-    background: #e9ecef;
+    background: var(--border-color);
     border-radius: 10px;
     overflow: hidden;
     margin-bottom: 10px;
@@ -445,21 +446,22 @@ header {
 
 /* Report styling improvements */
 .report-section {
-    background: #f8f9fa;
-    border: 1px solid #e9ecef;
+    background: var(--dark-surface);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 20px;
     margin-bottom: 20px;
+    color: var(--text-color);
 }
 
 .report-section h4 {
-    color: #2c3e50;
+    color: var(--primary-color);
     margin-bottom: 10px;
     font-size: 16px;
 }
 
 .test-message {
-    color: #6c757d;
+    color: var(--text-secondary);
     margin-bottom: 15px;
     font-style: italic;
     font-size: 14px;
@@ -476,8 +478,9 @@ header {
     align-items: center;
     padding: 10px;
     border-radius: 5px;
-    background: #fff;
-    border: 1px solid #dee2e6;
+    background: var(--dark-surface);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
 }
 
 .resolution-result.success {
@@ -509,7 +512,7 @@ header {
 }
 
 .resolution-actual {
-    color: #6c757d;
+    color: var(--text-secondary);
     font-size: 14px;
 }
 
@@ -523,8 +526,8 @@ header {
 .chart-container-report {
     flex: 1;
     min-width: 300px;
-    background: #fff;
-    border: 1px solid #dee2e6;
+    background: white;
+    border: 1px solid var(--border-color);
     border-radius: 5px;
     padding: 10px;
 }
@@ -541,19 +544,20 @@ header {
     justify-content: space-between;
     align-items: center;
     padding: 8px 12px;
-    background: #fff;
-    border: 1px solid #dee2e6;
+    background: var(--dark-surface);
+    border: 1px solid var(--border-color);
     border-radius: 5px;
+    color: var(--text-color);
 }
 
 .stat-label {
     font-weight: 600;
-    color: #495057;
+    color: var(--text-color);
 }
 
 .stat-value {
     font-weight: 700;
-    color: #007bff;
+    color: var(--primary-color);
 }
 
 /* Audio test styling */
@@ -567,12 +571,12 @@ header {
 }
 
 .audio-instructions h4 {
-    color: #2c3e50;
+    color: var(--primary-color);
     margin-bottom: 10px;
 }
 
 .audio-instructions p {
-    color: #6c757d;
+    color: var(--text-secondary);
     margin-bottom: 5px;
 }
 
@@ -600,12 +604,12 @@ header {
 }
 
 .mic-instructions h4 {
-    color: #2c3e50;
+    color: var(--primary-color);
     margin-bottom: 10px;
 }
 
 .mic-instructions p {
-    color: #6c757d;
+    color: var(--text-secondary);
     margin-bottom: 5px;
 }
 
@@ -662,7 +666,8 @@ header {
     align-items: flex-start;
     margin-bottom: 12px;
     padding: 6px 0;
-    border-bottom: 1px solid #e9ecef;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-color);
 }
 
 .detail-item:last-child {
@@ -671,14 +676,14 @@ header {
 
 .detail-label {
     font-weight: 600;
-    color: #495057;
+    color: var(--text-color);
     min-width: 90px;
     margin-right: 12px;
     font-size: 13px;
 }
 
 .detail-value {
-    color: #2c3e50;
+    color: var(--text-secondary);
     flex: 1;
     word-break: break-all;
     font-size: 13px;
@@ -687,13 +692,14 @@ header {
 .detail-value.user-agent {
     font-family: monospace;
     font-size: 11px;
-    background: #f8f9fa;
+    background: var(--dark-surface);
     padding: 8px 12px;
     border-radius: 4px;
-    border: none;
+    border: 1px solid var(--border-color);
     display: block;
     word-break: break-all;
     line-height: 1.4;
+    color: var(--text-color);
 }
 
 /* Seeing is Believing Section */
@@ -856,7 +862,7 @@ header {
     background: white;
     border-radius: 8px;
     padding: 15px;
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--border-color);
     min-height: 300px;
 }
 
@@ -1045,15 +1051,17 @@ header {
 }
 
 .test-info {
-    background: #f8f9fa;
+    background: var(--dark-surface);
     padding: 15px;
     border-radius: 8px;
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
 }
 
 .test-info p {
     margin-bottom: 5px;
     font-size: 14px;
+    color: var(--text-color);
 }
 
 .modal-footer {
@@ -1126,7 +1134,7 @@ header {
     align-items: center;
     justify-content: center;
     padding: 20px;
-    color: #6c757d;
+    color: var(--text-secondary);
     font-size: 16px;
 }
 
@@ -1134,7 +1142,7 @@ header {
     content: '';
     width: 20px;
     height: 20px;
-    border: 2px solid #dee2e6;
+    border: 2px solid var(--border-color);
     border-top: 2px solid var(--primary-color);
     border-radius: 50%;
     animation: spin 1s linear infinite;
