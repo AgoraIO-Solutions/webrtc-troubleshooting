@@ -1226,3 +1226,115 @@ header {
         font-size: 11px;
     }
 }
+
+/* Candidate Pair Analysis Styles */
+.candidate-pair-section {
+    margin-top: 20px;
+    padding: 15px;
+    background: var(--dark-card);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.candidate-pair-section h5 {
+    color: var(--primary-blue);
+    margin-bottom: 15px;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.candidate-pair-info {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.candidate-status {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.candidate-status.success {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success-color);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.candidate-status.warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--warning-color);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.candidate-status.error {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--danger-color);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.path-details {
+    background: var(--dark-surface);
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.path-summary {
+    margin-bottom: 12px;
+    padding: 8px;
+    background: var(--dark-bg);
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    color: var(--primary-blue);
+    border-left: 3px solid var(--primary-blue);
+}
+
+.path-detail {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.path-detail:last-child {
+    border-bottom: none;
+}
+
+.path-detail .detail-label {
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.path-detail .detail-value {
+    color: var(--text-color);
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    background: var(--dark-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+/* Responsive adjustments for candidate pair section */
+@media (max-width: 768px) {
+    .candidate-pair-section {
+        margin-top: 15px;
+        padding: 12px;
+    }
+    
+    .path-detail {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+    
+    .path-detail .detail-value {
+        margin-top: 2px;
+    }
+}

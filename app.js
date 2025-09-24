@@ -24,7 +24,7 @@ class WebRTCTroubleshooting {
             microphone: { status: 'pending', message: '' },
             speaker: { status: 'pending', message: '' },
             resolution: { status: 'pending', message: '', results: [] },
-            network: { status: 'pending', message: '', data: { bitrate: [], packetLoss: [] } }
+            network: { status: 'pending', message: '', data: { bitrate: [], packetLoss: [] }, candidatePair: null }
         };
         
         // Test profiles for resolution check
@@ -181,7 +181,7 @@ class WebRTCTroubleshooting {
             microphone: { status: 'pending', message: '' },
             speaker: { status: 'pending', message: '' },
             resolution: { status: 'pending', message: '', results: [] },
-            network: { status: 'pending', message: '', data: { bitrate: [], packetLoss: [] } }
+            network: { status: 'pending', message: '', data: { bitrate: [], packetLoss: [] }, candidatePair: null }
         };
     }
     
@@ -756,6 +756,9 @@ class WebRTCTroubleshooting {
             // Wait for network data
             await this.delay(10000); // 10 seconds
             
+            // Analyze candidate pairs
+            const candidatePairData = await this.analyzeCandidatePairs();
+            
             this.stopNetworkMonitoring();
             await this.cleanupAgoraClients();
             
@@ -786,12 +789,14 @@ class WebRTCTroubleshooting {
                     data: {
                         bitrate: lastBitrate,
                         packetLoss: lastPacketLoss
-                    }
+                    },
+                    candidatePair: candidatePairData
                 };
             } else {
                 this.testResults.network = {
                     status: 'error',
-                    message: 'No network data collected'
+                    message: 'No network data collected',
+                    candidatePair: candidatePairData
                 };
             }
             
@@ -800,7 +805,8 @@ class WebRTCTroubleshooting {
         } catch (error) {
             this.testResults.network = {
                 status: 'error',
-                message: error.message
+                message: error.message,
+                candidatePair: null
             };
             this.updateStepResult('networkResult', `❌ Network test failed: ${error.message}`, 'error');
             throw error;
@@ -981,6 +987,72 @@ class WebRTCTroubleshooting {
         }
     }
     
+    async analyzeCandidatePairs() {
+        try {
+            // Get the peer connection from the send client
+            const pc = await this.sendClient._p2pChannel.connection.peerConnection;
+            const stats = await pc.getStats();
+            
+            // Find transport stats
+            const transport = [...stats.values()].find(r => r.type === 'transport' || r.type === 'ice-transport');
+            const pair = transport?.selectedCandidatePairId
+                ? stats.get(transport.selectedCandidatePairId)
+                : null;
+            
+            // Fallback if a browser doesn't expose selectedCandidatePairId
+            const selected = pair ||
+                [...stats.values()].find(r =>
+                    r.type === 'candidate-pair' &&
+                    (r.nominated || r.state === 'succeeded' || r.selected === true)
+                );
+            
+            if (!selected) {
+                console.log('No selected candidate pair yet. iceConnectionState =', pc.iceConnectionState);
+                return {
+                    status: 'warning',
+                    message: 'No candidate pair selected',
+                    iceConnectionState: pc.iceConnectionState,
+                    selectedPair: null,
+                    localCandidate: null,
+                    pathSummary: null
+                };
+            }
+            
+            const local = stats.get(selected.localCandidateId);
+            console.log('Selected candidate pair:', selected);
+            console.log('Local candidate:', local);
+            
+            const candType = local?.candidateType;
+            const proto = local?.relayProtocol || local?.protocol;
+            const localIP = local?.ip || local?.address;
+            
+            const pathSummary = `type=${candType}, protocol=${proto}, localIP=${localIP}`;
+            console.log(`Path summary → ${pathSummary}`);
+            
+            return {
+                status: 'success',
+                message: 'Candidate pair analysis completed',
+                selectedPair: selected,
+                localCandidate: local,
+                pathSummary: pathSummary,
+                candidateType: candType,
+                protocol: proto,
+                localIP: localIP,
+                iceConnectionState: pc.iceConnectionState
+            };
+            
+        } catch (error) {
+            console.error('Candidate pair analysis failed:', error);
+            return {
+                status: 'error',
+                message: `Candidate pair analysis failed: ${error.message}`,
+                selectedPair: null,
+                localCandidate: null,
+                pathSummary: null
+            };
+        }
+    }
+    
     async cleanupAgoraClients() {
         try {
             if (this.audioTrack) {
@@ -1108,6 +1180,75 @@ class WebRTCTroubleshooting {
                         </div>
                     </div>
                 `;
+                
+                // Add candidate pair information if available
+                if (result.candidatePair) {
+                    const candidateData = result.candidatePair;
+                    detailContent += `
+                        <div class="candidate-pair-section">
+                            <h5>🔗 Connection Path Analysis</h5>
+                            <div class="candidate-pair-info">
+                                <div class="candidate-status ${candidateData.status}">
+                                    ${candidateData.status === 'success' ? '✅' : 
+                                      candidateData.status === 'warning' ? '⚠️' : '❌'}
+                                    ${candidateData.message}
+                                </div>
+                    `;
+                    
+                    if (candidateData.pathSummary) {
+                        detailContent += `
+                            <div class="path-details">
+                                <div class="path-summary">
+                                    <strong>Path Summary:</strong> ${candidateData.pathSummary}
+                                </div>
+                        `;
+                        
+                        if (candidateData.candidateType) {
+                            detailContent += `
+                                <div class="path-detail">
+                                    <span class="detail-label">Candidate Type:</span>
+                                    <span class="detail-value">${candidateData.candidateType}</span>
+                                </div>
+                            `;
+                        }
+                        
+                        if (candidateData.protocol) {
+                            detailContent += `
+                                <div class="path-detail">
+                                    <span class="detail-label">Protocol:</span>
+                                    <span class="detail-value">${candidateData.protocol}</span>
+                                </div>
+                            `;
+                        }
+                        
+                        if (candidateData.localIP) {
+                            detailContent += `
+                                <div class="path-detail">
+                                    <span class="detail-label">Local IP:</span>
+                                    <span class="detail-value">${candidateData.localIP}</span>
+                                </div>
+                            `;
+                        }
+                        
+                        if (candidateData.iceConnectionState) {
+                            detailContent += `
+                                <div class="path-detail">
+                                    <span class="detail-label">ICE Connection State:</span>
+                                    <span class="detail-value">${candidateData.iceConnectionState}</span>
+                                </div>
+                            `;
+                        }
+                        
+                        detailContent += `
+                            </div>
+                        `;
+                    }
+                    
+                    detailContent += `
+                            </div>
+                        </div>
+                    `;
+                }
             }
             
             detailContent += '</div>';
