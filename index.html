@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agora WebRTC Troubleshooting Demo</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔧</text></svg>">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+    <script src="https://www.gstatic.com/charts/loader.js"></script>
+    <script src="https://agora-packages.s3.us-west-2.amazonaws.com/ext/vb-2-1-0/agora-extension-virtual-background.js"></script>
+    <script src="https://agora-packages.s3.us-west-2.amazonaws.com/ext/aidenoiser/index.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/default-passive-events"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <h1>Agora WebRTC Troubleshooting Demo</h1>
+            </div>
+            <div class="header-controls">
+                <button id="downloadLogsBtn" class="btn-secondary">📥 Download Logs</button>
+                <button id="languageBtn" class="btn-secondary">🌐 English</button>
+                <button id="startBtn" class="btn-primary">🚀 Start Test</button>
+            </div>
+        </header>
+
+        <main>
+            <!-- Test Configuration -->
+            <div class="test-config" id="testConfig">
+                <h2>Test Configuration</h2>
+                <div class="config-grid">
+                    <div class="input-group">
+                        <label for="appId">App ID</label>
+                        <input type="text" id="appId" placeholder="Enter your App ID" value="">
+                    </div>
+                    <div class="input-group">
+                        <label for="token">Token (optional)</label>
+                        <input type="text" id="token" placeholder="Enter token">
+                    </div>
+                    <div class="input-group">
+                        <label for="channelName">Channel Name</label>
+                        <input type="text" id="channelName" placeholder="Enter channel name">
+                    </div>
+                    <div class="input-group">
+                        <label for="userId">User ID (optional)</label>
+                        <input type="text" id="userId" placeholder="Enter user ID">
+                    </div>
+                </div>
+                
+                <!-- Cloud Proxy Settings -->
+                <div class="proxy-settings">
+                    <h3>Cloud Proxy Settings</h3>
+                    <div class="proxy-toggle">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enableCloudProxy">
+                            <span class="toggle-slider"></span>
+                            Enable Cloud Proxy
+                        </label>
+                    </div>
+                    <div class="proxy-modes" id="proxyModes" style="display: none;">
+                        <label>Proxy Mode:</label>
+                        <div class="mode-buttons">
+                            <button class="mode-btn active" data-mode="3">Mode 3 (UDP 443)</button>
+                            <button class="mode-btn" data-mode="5">Mode 5 (TCP TLS)</button>
+                        </div>
+                        <div class="proxy-info">
+                            <small>Mode 3: UDP 443, no TCP fallback | Mode 5: TCP TLS</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Test Steps -->
+            <div class="test-steps" id="testSteps" style="display: none;">
+                <div class="step-indicator">
+                    <div class="step active" data-step="0">
+                        <div class="step-number">1</div>
+                        <div class="step-title">Browser Check</div>
+                    </div>
+                    <div class="step" data-step="1">
+                        <div class="step-number">2</div>
+                        <div class="step-title">Microphone Check</div>
+                    </div>
+                    <div class="step" data-step="2">
+                        <div class="step-number">3</div>
+                        <div class="step-title">Speaker Check</div>
+                    </div>
+                    <div class="step" data-step="3">
+                        <div class="step-number">4</div>
+                        <div class="step-title">Resolution Check</div>
+                    </div>
+                    <div class="step" data-step="4">
+                        <div class="step-number">5</div>
+                        <div class="step-title">Network Check</div>
+                    </div>
+                </div>
+
+                <!-- Step Content -->
+                <div class="step-content">
+                    <!-- Step 0: Browser Check -->
+                    <div class="step-panel active" id="step0">
+                        <div class="step-info">
+                            <h3>Browser Compatibility Check</h3>
+                            <p>Checking if your browser supports Agora Web SDK...</p>
+                        </div>
+                        <div class="step-result" id="browserResult">
+                            <div class="loading">🔄 Checking...</div>
+                        </div>
+                    </div>
+
+                    <!-- Step 1: Microphone Check -->
+                    <div class="step-panel" id="step1">
+                        <div class="step-info">
+                            <h3>Microphone Check</h3>
+                            <p>Testing your microphone functionality...</p>
+                        </div>
+                        <div class="step-result" id="micResult">
+                            <div class="volume-meter">
+                                <div class="volume-bar" id="volumeBar"></div>
+                                <div class="volume-text">Speak into your microphone</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Speaker Check -->
+                    <div class="step-panel" id="step2">
+                        <div class="step-info">
+                            <h3>Speaker Check</h3>
+                            <p>Testing your speaker/headphone functionality...</p>
+                        </div>
+                        <div class="step-result" id="speakerResult">
+                            <div class="audio-test">
+                                <audio id="sampleAudio" controls>
+                                    <source src="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAAAwAAAbgA" type="audio/mpeg">
+                                    Your browser does not support the audio element.
+                                </audio>
+                                <div class="speaker-buttons">
+                                    <button id="speakerYes" class="btn-success">✅ Yes, I can hear it</button>
+                                    <button id="speakerNo" class="btn-danger">❌ No, I cannot hear it</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Resolution Check -->
+                    <div class="step-panel" id="step3">
+                        <div class="step-info">
+                            <h3>Resolution Check</h3>
+                            <p>Testing video resolution support...</p>
+                        </div>
+                        <div class="step-result" id="resolutionResult">
+                            <div class="resolution-list" id="resolutionList">
+                                <div class="loading">🔄 Testing resolutions...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Network Check -->
+                    <div class="step-panel" id="step4">
+                        <div class="step-info">
+                            <h3>Network Connection Check</h3>
+                            <p>Testing network connectivity and quality...</p>
+                        </div>
+                        <div class="step-result" id="networkResult">
+                            <div class="network-charts">
+                                <div class="chart-container">
+                                    <div id="bitrateChart"></div>
+                                </div>
+                                <div class="chart-container">
+                                    <div id="packetLossChart"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Test Report -->
+            <div class="test-report" id="testReport" style="display: none;">
+                <h2>Test Report</h2>
+                <div class="report-summary" id="reportSummary"></div>
+                <div class="report-details" id="reportDetails"></div>
+                <div class="report-actions">
+                    <button id="tryAgainBtn" class="btn-primary">🔄 Try Again</button>
+                    <button id="shareReportBtn" class="btn-secondary">📤 Share Report</button>
+                </div>
+            </div>
+
+            <!-- Seeing is Believing Section -->
+            <div class="seeing-is-believing" id="seeingIsBelieving" style="display: none;">
+                <h2>👁️ Seeing is Believing</h2>
+                <p>Experience real-time video and audio quality with live testing</p>
+                
+                <div class="live-test-container">
+                    <div class="video-grid">
+                        <div class="video-box">
+                            <div class="video-label">Local Video</div>
+                            <div id="localVideoContainer" class="video-container">
+                                <div id="localVideo"></div>
+                            </div>
+                        </div>
+                        <div class="video-box">
+                            <div class="video-label">Remote Video</div>
+                            <div id="remoteVideoContainer" class="video-container">
+                                <div id="remoteVideo"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="live-stats">
+                        <div class="stat-grid">
+                            <div class="stat-card">
+                                <div class="stat-label">Video Bitrate</div>
+                                <div class="stat-value" id="liveVideoBitrate">0 kbps</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Audio Bitrate</div>
+                                <div class="stat-value" id="liveAudioBitrate">0 kbps</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Video Packet Loss</div>
+                                <div class="stat-value" id="liveVideoPacketLoss">0%</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Audio Packet Loss</div>
+                                <div class="stat-value" id="liveAudioPacketLoss">0%</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="live-controls">
+                        <button id="startLiveTestBtn" class="btn-primary">🚀 Start Live Test</button>
+                        <button id="stopLiveTestBtn" class="btn-danger" style="display: none;">⏹️ Stop Test</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Hidden video containers for testing -->
+            <div id="test-send" style="display: none; width: 320px; height: 240px; background: #000;"></div>
+            <div id="test-recv" style="display: none; width: 320px; height: 240px; background: #000;"></div>
+
+            <!-- Live Test Modal -->
+            <div class="modal" id="liveTestModal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Live Test</h3>
+                        <button class="close-btn" id="closeModal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="video-container">
+                            <div class="video-box">
+                                <div id="localVideo"></div>
+                                <div class="video-label">Local Video</div>
+                            </div>
+                            <div class="video-box">
+                                <div id="remoteVideo"></div>
+                                <div class="video-label">Remote Video</div>
+                            </div>
+                        </div>
+                        <div class="test-info">
+                            <p><strong>Channel:</strong> <span id="testChannel"></span></p>
+                            <p><strong>Local UID:</strong> <span id="testLocalUid"></span></p>
+                            <p><strong>Remote UID:</strong> <span id="testRemoteUid"></span></p>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="endTestBtn" class="btn-danger">End Test</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Status Messages -->
+        <div class="status-messages" id="statusMessages"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
