@@ -1202,27 +1202,40 @@ class WebRTCTroubleshooting {
                 };
             }
             
+            //get local first
             const local = stats.get(selected.localCandidateId);
-            console.log('Selected candidate pair:', selected);
-            console.log('Local candidate:', local);
-            
+            const localIP = local?.ip || local?.address; //get this with an or because some browsers don't have ip
+            const proto = local?.relayProtocol || local?.protocol; //get this with an or because some browsers don't have relayProtocol
             const candType = local?.candidateType;
-            const proto = local?.relayProtocol || local?.protocol;
-            const localIP = local?.ip || local?.address;
+            console.log(`Local candidate path: ${local.relatedAddress}:${local.relatedPort} => ${proto}/${local.networkType}/${candType} => ${localIP}:${local.port}`);
             
-            const pathSummary = `type=${candType}, protocol=${proto}, localIP=${localIP}`;
+            //get remote
+            const remote = stats.get(selected.remoteCandidateId);
+            const remoteIP = remote?.ip || remote?.address; //get this with an or because some browsers don't have ip
+            const protoRemote = remote?.relayProtocol || remote?.protocol; //get this with an or because some browsers don't have relayProtocol
+            const candTypeRemote = remote?.candidateType;
+            const remotePort = remote?.port;
+            console.log(`Remote candidate path: ${protoRemote}/${candTypeRemote} => ${remoteIP}:${remotePort}`);
+    
+            const pathSummary = `${local.relatedAddress}:${local.relatedPort} => ${localIP}:${local.port} => protocol=${proto}/${candType} => ${remoteIP}:${remotePort}/${candTypeRemote}`;
             console.log(`Path summary → ${pathSummary}`);
             
             return {
                 status: 'success',
                 message: 'Candidate pair analysis completed',
                 selectedPair: selected,
-                localCandidate: local,
-                pathSummary: pathSummary,
-                candidateType: candType,
+                localIp: local.relatedAddress,
+                localIpPort: local.relatedPort,
+                localPublicIp: localIP,
+                localPublicPort: local.port,
+                localCandidate: candType,
                 protocol: proto,
-                localIP: localIP,
-                iceConnectionState: pc.iceConnectionState
+                networkType: local.networkType,
+                remoteIp: remoteIP,
+                remotePort: remotePort,
+                remoteCandidate: candTypeRemote,
+                protocolRemote: protoRemote,
+                pathSummary: pathSummary,
             };
             
         } catch (error) {
@@ -1232,6 +1245,7 @@ class WebRTCTroubleshooting {
                 message: `Candidate pair analysis failed: ${error.message}`,
                 selectedPair: null,
                 localCandidate: null,
+                remoteCandidate: null,
                 pathSummary: null
             };
         }
@@ -1388,7 +1402,7 @@ class WebRTCTroubleshooting {
                     const candidateData = result.candidatePair;
                     detailContent += `
                         <div class="candidate-pair-section">
-                            <h5>Connection Path Analysis</h5>
+                            <h5>🔗 Connection Path Analysis</h5>
                             <div class="candidate-pair-info">
                                 <div class="candidate-status ${candidateData.status}">
                                     ${candidateData.status === 'success' ? '✅' : 
@@ -1397,49 +1411,47 @@ class WebRTCTroubleshooting {
                                 </div>
                     `;
                     
-                    if (candidateData.pathSummary) {
+                    // Create a copy of candidateData and remove status/message properties
+                    const { status, message, selectedPair, ...candidateDetails } = candidateData;
+                    
+                    // Function to convert camelCase to readable labels
+                    const formatLabel = (key) => {
+                        return key
+                            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+                            .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+                            .trim();
+                    };
+                    
+                    // Check if we have any details to show
+                    const hasDetails = Object.keys(candidateDetails).length > 0;
+                    
+                    if (hasDetails) {
                         detailContent += `
                             <div class="path-details">
-                                <div class="path-summary">
-                                    <strong>Path Summary:</strong> ${candidateData.pathSummary}
-                                </div>
                         `;
                         
-                        if (candidateData.candidateType) {
+                        // Special handling for pathSummary if it exists
+                        if (candidateDetails.pathSummary) {
                             detailContent += `
-                                <div class="path-detail">
-                                    <span class="detail-label">Candidate Type:</span>
-                                    <span class="detail-value">${candidateData.candidateType}</span>
+                                <div class="path-summary">
+                                    <strong>Path Summary:</strong> ${candidateDetails.pathSummary}
                                 </div>
                             `;
+                            // Remove pathSummary from details to avoid duplication
+                            delete candidateDetails.pathSummary;
                         }
                         
-                        if (candidateData.protocol) {
-                            detailContent += `
-                                <div class="path-detail">
-                                    <span class="detail-label">Protocol:</span>
-                                    <span class="detail-value">${candidateData.protocol}</span>
-                                </div>
-                            `;
-                        }
-                        
-                        if (candidateData.localIP) {
-                            detailContent += `
-                                <div class="path-detail">
-                                    <span class="detail-label">Local IP:</span>
-                                    <span class="detail-value">${candidateData.localIP}</span>
-                                </div>
-                            `;
-                        }
-                        
-                        if (candidateData.iceConnectionState) {
-                            detailContent += `
-                                <div class="path-detail">
-                                    <span class="detail-label">ICE Connection State:</span>
-                                    <span class="detail-value">${candidateData.iceConnectionState}</span>
-                                </div>
-                            `;
-                        }
+                        // Loop through remaining properties and add them as detail items
+                        Object.entries(candidateDetails).forEach(([key, value]) => {
+                            if (value !== undefined && value !== null && value !== '') {
+                                detailContent += `
+                                    <div class="path-detail">
+                                        <span class="detail-label">${formatLabel(key)}:</span>
+                                        <span class="detail-value">${value}</span>
+                                    </div>
+                                `;
+                            }
+                        });
                         
                         detailContent += `
                             </div>
@@ -1453,9 +1465,7 @@ class WebRTCTroubleshooting {
                 }
             }
             
-            detailContent += `
-                </div>
-            </div>`;
+            detailContent += '</div>';
             return detailContent;
         }).join('');
         
