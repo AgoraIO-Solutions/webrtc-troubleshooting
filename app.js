@@ -1102,7 +1102,7 @@ class WebRTCTroubleshooting {
         const summary = document.getElementById('reportSummary');
         const details = document.getElementById('reportDetails');
         
-        // Create summary
+        // Create summary (keep simple, no collapsible here)
         const summaryItems = Object.entries(this.testResults).map(([key, result]) => {
             const statusIcon = result.status === 'success' ? '✅' : 
                               result.status === 'warning' ? '⚠️' : '❌';
@@ -1119,10 +1119,15 @@ class WebRTCTroubleshooting {
         
         summary.innerHTML = summaryItems;
         
+        
         // Create detailed report
         const detailsContent = Object.entries(this.testResults).map(([key, result]) => {
-            let detailContent = `<div class="report-section">
-                <h4>${this.getTestName(key)}</h4>
+            let detailContent = `<div class="report-section" data-details-key="${key}">
+                <h4 class="collapsible-heading">
+                    ${this.getTestName(key)}
+                    <span class="collapse-arrow">▼</span>
+                </h4>
+                <div class="test-content">
                 <p class="test-message">${result.message}</p>`;
             
             if (key === 'browser' && result.details) {
@@ -1202,7 +1207,7 @@ class WebRTCTroubleshooting {
                     const candidateData = result.candidatePair;
                     detailContent += `
                         <div class="candidate-pair-section">
-                            <h5>🔗 Connection Path Analysis</h5>
+                            <h5>Connection Path Analysis</h5>
                             <div class="candidate-pair-info">
                                 <div class="candidate-status ${candidateData.status}">
                                     ${candidateData.status === 'success' ? '✅' : 
@@ -1267,11 +1272,48 @@ class WebRTCTroubleshooting {
                 }
             }
             
-            detailContent += '</div>';
+            detailContent += `
+                </div>
+            </div>`;
             return detailContent;
         }).join('');
         
         details.innerHTML = detailsContent;
+        
+        // Add click handlers for collapsible functionality AFTER HTML is inserted
+        setTimeout(() => {
+            document.querySelectorAll('.collapsible-heading').forEach(heading => {
+                heading.addEventListener('click', () => {
+                    console.log('Heading clicked!');
+                    const reportSection = heading.closest('.report-section');
+                    const content = reportSection.querySelector('.test-content');
+                    const arrow = heading.querySelector('.collapse-arrow');
+                    
+                    console.log('Report section:', reportSection);
+                    console.log('Content:', content);
+                    console.log('Arrow:', arrow);
+                    
+                    if (content && arrow) {
+                        const isCollapsed = content.classList.contains('collapsed');
+                        console.log('Is collapsed:', isCollapsed);
+                        
+                        if (isCollapsed) {
+                            content.classList.remove('collapsed');
+                            content.style.display = 'block';
+                            arrow.textContent = '▼';
+                            console.log('Expanding content');
+                        } else {
+                            content.classList.add('collapsed');
+                            content.style.display = 'none';
+                            arrow.textContent = '▲';
+                            console.log('Collapsing content');
+                        }
+                    } else {
+                        console.log('Content or arrow not found!');
+                    }
+                });
+            });
+        }, 100);
         
         // Initialize charts in the report if network data exists
         if (this.testResults.network && this.testResults.network.data) {
@@ -1346,7 +1388,9 @@ class WebRTCTroubleshooting {
                 panel.classList.add('active');
             }
         });
+        
     }
+    
     
     nextStep() {
         this.currentStep++;
@@ -1809,13 +1853,13 @@ class WebRTCTroubleshooting {
                 }
                 
                 if (liveVideoPacketLossEl) {
-                    liveVideoPacketLossEl.textContent = `S: ${localVideoPacketLoss.toFixed(1)}% / R: ${remoteVideoPacketLoss.toFixed(1)}%`;
+                    liveVideoPacketLossEl.textContent = `Send: ${localVideoPacketLoss.toFixed(1)}% / Recv: ${remoteVideoPacketLoss.toFixed(1)}%`;
                 } else {
                     console.error('liveVideoPacketLoss element not found');
                 }
                 
                 if (liveAudioPacketLossEl) {
-                    liveAudioPacketLossEl.textContent = `S: ${localAudioPacketLoss.toFixed(1)}% / R: ${remoteAudioPacketLoss.toFixed(1)}%`;
+                    liveAudioPacketLossEl.textContent = `Send: ${localAudioPacketLoss.toFixed(1)}% / Recv: ${remoteAudioPacketLoss.toFixed(1)}%`;
                 } else {
                     console.error('liveAudioPacketLoss element not found');
                 }

@@ -317,7 +317,6 @@ header {
     align-items: center;
     position: relative;
     z-index: 2;
-    cursor: pointer;
 }
 
 .step-number {
@@ -458,6 +457,43 @@ header {
     color: var(--primary-color);
     margin-bottom: 10px;
     font-size: 16px;
+}
+
+/* Collapsible headings in report */
+.collapsible-heading {
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 15px;
+    transition: all 0.3s ease;
+    user-select: none;
+}
+
+.collapsible-heading:hover {
+    color: var(--primary-cyan);
+    transform: translateX(5px);
+}
+
+.collapse-arrow {
+    font-size: 16px;
+    color: var(--primary-color);
+    transition: transform 0.3s ease;
+}
+
+.collapsible-heading:hover .collapse-arrow {
+    transform: scale(1.2);
+}
+
+.test-content {
+    display: block;
+    transition: all 0.3s ease;
+}
+
+.test-content.collapsed {
+    display: none !important;
 }
 
 .test-message {
@@ -631,8 +667,6 @@ header {
     background: var(--dark-surface);
     box-shadow: 0 2px 4px rgba(0,0,0,0.3);
     min-height: 60px;
-    overflow: hidden;
-    word-wrap: break-word;
     color: var(--text-color);
 }
 
@@ -653,6 +687,7 @@ header {
     background: var(--dark-surface);
     color: var(--text-color);
 }
+
 
 
 
