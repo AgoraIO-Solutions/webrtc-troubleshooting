@@ -106,6 +106,9 @@
                         <div class="step-result" id="browserResult">
                             <div class="loading">🔄 Checking...</div>
                         </div>
+                        <div class="step-actions">
+                            <button class="btn-skip" id="skipBrowserBtn">⏭️ Skip Test</button>
+                        </div>
                     </div>
 
                     <!-- Step 1: Microphone Check -->
@@ -120,6 +123,9 @@
                                 <div class="volume-text">Speak into your microphone</div>
                             </div>
                         </div>
+                        <div class="step-actions">
+                            <button class="btn-skip" id="skipMicBtn">⏭️ Skip Test</button>
+                        </div>
                     </div>
 
                     <!-- Step 2: Speaker Check -->
@@ -130,15 +136,23 @@
                         </div>
                         <div class="step-result" id="speakerResult">
                             <div class="audio-test">
-                                <audio id="sampleAudio" controls>
-                                    <source src="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAAAwAAAbgA" type="audio/mpeg">
-                                    Your browser does not support the audio element.
-                                </audio>
-                                <div class="speaker-buttons">
-                                    <button id="speakerYes" class="btn-success">✅ Yes, I can hear it</button>
-                                    <button id="speakerNo" class="btn-danger">❌ No, I cannot hear it</button>
+                                <div class="audio-instructions">
+                                    <h4>🔊 Speaker Test</h4>
+                                    <p>Click the play button below to test your speakers/headphones.</p>
+                                    <p>You should hear a test tone for 4 seconds. You can play it multiple times.</p>
+                                </div>
+                                <div class="audio-controls">
+                                    <button id="playTestAudio" class="btn-primary">▶️ Play Test Audio</button>
+                                    <button id="playTestAudioAgain" class="btn-secondary" style="display: none;">🔄 Play Again</button>
+                                    <div class="speaker-buttons" style="display: none;">
+                                        <button id="speakerYes" class="btn-success">✅ Yes, I can hear it</button>
+                                        <button id="speakerNo" class="btn-danger">❌ No, I cannot hear it</button>
+                                    </div>
                                 </div>
                             </div>
+                        </div>
+                        <div class="step-actions">
+                            <button class="btn-skip" id="skipSpeakerBtn">⏭️ Skip Test</button>
                         </div>
                     </div>
 
@@ -152,6 +166,9 @@
                             <div class="resolution-list" id="resolutionList">
                                 <div class="loading">🔄 Testing resolutions...</div>
                             </div>
+                        </div>
+                        <div class="step-actions">
+                            <button class="btn-skip" id="skipResolutionBtn">⏭️ Skip Test</button>
                         </div>
                     </div>
 
@@ -170,6 +187,9 @@
                                     <div id="packetLossChart"></div>
                                 </div>
                             </div>
+                        </div>
+                        <div class="step-actions">
+                            <button class="btn-skip" id="skipNetworkBtn">⏭️ Skip Test</button>
                         </div>
                     </div>
                 </div>

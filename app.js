@@ -27,6 +27,9 @@ class WebRTCTroubleshooting {
             network: { status: 'pending', message: '', data: { bitrate: [], packetLoss: [] }, candidatePair: null }
         };
         
+        // Skip functionality
+        this.skippedTests = new Set();
+        
         // Test profiles for resolution check
         this.testProfiles = [
             { resolution: '120p_1', width: 160, height: 120 },
@@ -54,6 +57,7 @@ class WebRTCTroubleshooting {
         this.generateChannelName();
         this.setupCharts();
         this.enableAgoraLogging();
+        this.hideAllSkipButtons();
     }
     
     enableAgoraLogging() {
@@ -105,6 +109,13 @@ class WebRTCTroubleshooting {
         // Seeing is believing controls
         document.getElementById('startLiveTestBtn').addEventListener('click', () => this.showDeviceSelection());
         document.getElementById('stopLiveTestBtn').addEventListener('click', () => this.stopLiveTest());
+        
+        // Skip test buttons
+        document.getElementById('skipBrowserBtn').addEventListener('click', () => this.skipTest('browser'));
+        document.getElementById('skipMicBtn').addEventListener('click', () => this.skipTest('microphone'));
+        document.getElementById('skipSpeakerBtn').addEventListener('click', () => this.skipTest('speaker'));
+        document.getElementById('skipResolutionBtn').addEventListener('click', () => this.skipTest('resolution'));
+        document.getElementById('skipNetworkBtn').addEventListener('click', () => this.skipTest('network'));
     }
     
     generateChannelName() {
@@ -159,20 +170,37 @@ class WebRTCTroubleshooting {
         this.isTesting = true;
         this.currentStep = 0;
         this.resetTestResults();
+        this.skippedTests.clear();
         
         // Show test steps
         document.getElementById('testConfig').style.display = 'none';
         document.getElementById('testSteps').style.display = 'block';
         document.getElementById('testReport').style.display = 'none';
         
+        // Show skip buttons for all tests
+        this.showSkipButtons();
+        
         this.showMessage('Starting WebRTC troubleshooting test...', 'info');
         
         try {
-            await this.runBrowserCheck();
-            await this.runMicrophoneCheck();
-            await this.runSpeakerCheck();
-            await this.runResolutionCheck();
-            await this.runNetworkCheck();
+            // Run tests only if not skipped
+            if (!this.skippedTests.has('browser')) {
+                await this.runBrowserCheck();
+            }
+            if (!this.skippedTests.has('microphone')) {
+                await this.runMicrophoneCheck();
+            }
+            if (!this.skippedTests.has('speaker')) {
+                await this.runSpeakerCheck();
+            }
+            if (!this.skippedTests.has('resolution')) {
+                await this.runResolutionCheck();
+            }
+            if (!this.skippedTests.has('network')) {
+                await this.runNetworkCheck();
+            }
+            
+            // Always show the test report, regardless of skipped tests
             this.showTestReport();
         } catch (error) {
             console.error('Test failed:', error);
@@ -191,6 +219,12 @@ class WebRTCTroubleshooting {
     }
     
     async runBrowserCheck() {
+        // Check if this test has been skipped
+        if (this.skippedTests.has('browser')) {
+            console.log('Browser test was skipped, not running');
+            return;
+        }
+        
         this.updateStep(0);
         this.showMessage('Checking browser compatibility...', 'info');
         
@@ -203,6 +237,12 @@ class WebRTCTroubleshooting {
             const sdkVersion = AgoraRTC.VERSION;
             
             if (isSupported) {
+                // Check if test was skipped before setting results
+                if (this.skippedTests.has('browser')) {
+                    console.log('Browser test was skipped, not setting results');
+                    return;
+                }
+                
                 this.testResults.browser = {
                     status: 'success',
                     message: `${browserInfo.name} - Fully supported`,
@@ -219,6 +259,12 @@ class WebRTCTroubleshooting {
                      <small>Platform: ${browserInfo.platform}</small><br>
                      <small>User Agent: ${userAgent}</small>`, 'success');
             } else {
+                // Check if test was skipped before setting results
+                if (this.skippedTests.has('browser')) {
+                    console.log('Browser test was skipped, not setting results');
+                    return;
+                }
+                
                 this.testResults.browser = {
                     status: 'warning',
                     message: `${browserInfo.name} - Limited support`,
@@ -240,6 +286,12 @@ class WebRTCTroubleshooting {
             await this.delay(4000);
             this.nextStep();
         } catch (error) {
+            // Check if test was skipped before setting results
+            if (this.skippedTests.has('browser')) {
+                console.log('Browser test was skipped, not setting results');
+                return;
+            }
+            
             this.testResults.browser = {
                 status: 'error',
                 message: error.message
@@ -290,6 +342,12 @@ class WebRTCTroubleshooting {
     }
     
     async runMicrophoneCheck() {
+        // Check if this test has been skipped
+        if (this.skippedTests.has('microphone')) {
+            console.log('Microphone test was skipped, not running');
+            return;
+        }
+        
         this.updateStep(1);
         this.showMessage('Testing microphone... Speak into your microphone!', 'info');
         
@@ -361,12 +419,24 @@ class WebRTCTroubleshooting {
                                 console.log(`Microphone test - Avg volume: ${avgVolume}, Max volume: ${maxVolume}`);
                                 
                                 if (maxVolume > 0.05) {
+                                    // Check if test was skipped before setting results
+                                    if (this.skippedTests.has('microphone')) {
+                                        console.log('Microphone test was skipped, not setting results');
+                                        return;
+                                    }
+                                    
                 this.testResults.microphone = {
                     status: 'success',
                     message: 'Microphone OK'
                 };
                                     this.updateStepResult('micResult', '✅ Microphone works well - Good volume detected!', 'success');
                                 } else {
+                                    // Check if test was skipped before setting results
+                                    if (this.skippedTests.has('microphone')) {
+                                        console.log('Microphone test was skipped, not setting results');
+                                        return;
+                                    }
+                                    
                                     this.testResults.microphone = {
                                         status: 'warning',
                                         message: 'Low volume detected'
@@ -388,6 +458,12 @@ class WebRTCTroubleshooting {
                                 clearInterval(volumeInterval);
                                 this.localAudioTrack.close();
                                 
+                                // Check if test was skipped before setting results
+                                if (this.skippedTests.has('microphone')) {
+                                    console.log('Microphone test was skipped, not setting results');
+                                    return;
+                                }
+                                
                                 this.testResults.microphone = {
                                     status: 'error',
                                     message: 'Microphone failed'
@@ -403,6 +479,12 @@ class WebRTCTroubleshooting {
             });
             
         } catch (error) {
+            // Check if test was skipped before setting results
+            if (this.skippedTests.has('microphone')) {
+                console.log('Microphone test was skipped, not setting results');
+                return;
+            }
+            
             this.testResults.microphone = {
                 status: 'error',
                 message: error.message
@@ -413,15 +495,40 @@ class WebRTCTroubleshooting {
     }
     
     async runSpeakerCheck() {
+        // Check if this test has been skipped
+        if (this.skippedTests.has('speaker')) {
+            console.log('Speaker test was skipped, not running');
+            return;
+        }
+        
         this.updateStep(2);
         this.showMessage('Testing speaker/headphones...', 'info');
         
-        // Create audio element with a free test sound
+        // Create the proper speaker test UI
         this.createTestAudio();
         
         // Wait for user interaction
         return new Promise((resolve) => {
             this.speakerResolve = resolve;
+            
+            // Clear any existing timeout
+            if (this.speakerTimeout) {
+                clearTimeout(this.speakerTimeout);
+            }
+            
+            // Set a timeout for the speaker test
+            this.speakerTimeout = setTimeout(() => {
+                // Check if test was skipped before showing timeout message
+                if (this.skippedTests.has('speaker')) {
+                    console.log('Speaker test was skipped, not showing timeout message');
+                    return;
+                }
+                
+                if (this.speakerResolve) {
+                    this.showMessage('No response detected - assuming speaker test failed', 'warning');
+                    this.handleSpeakerResult(false);
+                }
+            }, 20000);
         });
     }
     
@@ -429,26 +536,6 @@ class WebRTCTroubleshooting {
         try {
             // Create a more complex test tone with multiple frequencies
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // Update UI to show play button and instructions
-            const speakerResult = document.getElementById('speakerResult');
-            speakerResult.innerHTML = `
-                <div class="audio-test">
-                    <div class="audio-instructions">
-                        <h4>🔊 Speaker Test</h4>
-                        <p>Click the play button below to test your speakers/headphones.</p>
-                        <p>You should hear a test tone for 4 seconds. You can play it multiple times.</p>
-                    </div>
-                    <div class="audio-controls">
-                        <button id="playTestAudio" class="btn-primary">▶️ Play Test Audio</button>
-                        <button id="playTestAudioAgain" class="btn-secondary" style="display: none;">🔄 Play Again</button>
-                        <div class="speaker-buttons" style="display: none;">
-                            <button id="speakerYes" class="btn-success">✅ Yes, I can hear it</button>
-                            <button id="speakerNo" class="btn-danger">❌ No, I cannot hear it</button>
-                        </div>
-                    </div>
-                </div>
-            `;
             
             // Function to play test audio
             const playTestTone = () => {
@@ -535,6 +622,12 @@ class WebRTCTroubleshooting {
             
             // Auto-advance after 20 seconds if no user interaction
             this.speakerTimeout = setTimeout(() => {
+                // Check if test was skipped before showing timeout message
+                if (this.skippedTests.has('speaker')) {
+                    console.log('Speaker test was skipped, not showing timeout message');
+                    return;
+                }
+                
                 if (this.speakerResolve) {
                     this.showMessage('No response detected - assuming speaker test failed', 'warning');
                     this.handleSpeakerResult(false);
@@ -579,6 +672,12 @@ class WebRTCTroubleshooting {
         
         if (canHear) {
             console.log('Setting speaker result to success');
+            // Check if test was skipped before setting results
+            if (this.skippedTests.has('speaker')) {
+                console.log('Speaker test was skipped, not setting results');
+                return;
+            }
+            
             this.testResults.speaker = {
                 status: 'success',
                 message: 'Speaker OK'
@@ -586,6 +685,12 @@ class WebRTCTroubleshooting {
             this.updateStepResult('speakerResult', '✅ Speaker works well - Audio output is working!', 'success');
         } else {
             console.log('Setting speaker result to error');
+            // Check if test was skipped before setting results
+            if (this.skippedTests.has('speaker')) {
+                console.log('Speaker test was skipped, not setting results');
+                return;
+            }
+            
             this.testResults.speaker = {
                 status: 'error',
                 message: 'Speaker failed'
@@ -600,11 +705,19 @@ class WebRTCTroubleshooting {
     }
     
     async runResolutionCheck() {
+        // Check if this test has been skipped
+        if (this.skippedTests.has('resolution')) {
+            console.log('Resolution test was skipped, not running');
+            return;
+        }
+        
         this.updateStep(3);
         this.showMessage('Testing video resolutions...', 'info');
         
         const resolutionList = document.getElementById('resolutionList');
-        resolutionList.innerHTML = '<div class="loading">🔄 Testing resolutions...</div>';
+        if (resolutionList) {
+            resolutionList.innerHTML = '<div class="loading">🔄 Testing resolutions...</div>';
+        }
         
         try {
             const results = [];
@@ -618,11 +731,18 @@ class WebRTCTroubleshooting {
                     console.log('Resolution test interrupted');
                     break;
                 }
+                
+                // Check if test was skipped during the loop
+                if (this.skippedTests.has('resolution')) {
+                    console.log('Resolution test was skipped during loop, stopping');
+                    break;
+                }
                 const profile = this.testProfiles[i];
                 console.log(`Testing resolution: ${profile.resolution} (${profile.width}x${profile.height})`);
                 
-                // Update UI to show current test
-                resolutionList.innerHTML = `
+                // Update UI to show current test (only if not skipped)
+                if (!this.skippedTests.has('resolution') && resolutionList) {
+                    resolutionList.innerHTML = `
                     <div class="loading">🔄 Testing ${profile.width} × ${profile.height}...</div>
                     ${results.map(result => `
                         <div class="resolution-item">
@@ -638,6 +758,13 @@ class WebRTCTroubleshooting {
                         </div>
                     `).join('')}
                 `;
+                }
+                
+                // Check if test was skipped before executing
+                if (this.skippedTests.has('resolution')) {
+                    console.log('Resolution test was skipped, not executing test');
+                    break;
+                }
                 
                 try {
                     // Create video track with specific resolution
@@ -710,6 +837,12 @@ class WebRTCTroubleshooting {
             // Clear the flag
             this.isResolutionTesting = false;
             
+            // Check if test was skipped before setting results
+            if (this.skippedTests.has('resolution')) {
+                console.log('Resolution test was skipped, not setting results');
+                return;
+            }
+            
             this.testResults.resolution = {
                 status: results.some(r => r.status === 'success') ? 'success' : 'error',
                 message: `${results.filter(r => r.status === 'success').length}/${results.length} resolutions OK`,
@@ -720,6 +853,12 @@ class WebRTCTroubleshooting {
             
         } catch (error) {
             this.isResolutionTesting = false;
+            // Check if test was skipped before setting results
+            if (this.skippedTests.has('resolution')) {
+                console.log('Resolution test was skipped, not setting results');
+                return;
+            }
+            
             this.testResults.resolution = {
                 status: 'error',
                 message: error.message,
@@ -731,23 +870,37 @@ class WebRTCTroubleshooting {
     }
     
     updateResolutionList(results) {
+        // Check if resolution test was skipped
+        if (this.skippedTests.has('resolution')) {
+            console.log('Resolution test was skipped, not updating resolution list');
+            return;
+        }
+        
         const resolutionList = document.getElementById('resolutionList');
-        resolutionList.innerHTML = results.map(result => `
-            <div class="resolution-item">
-                <div class="resolution-info">
-                    ${result.width} × ${result.height}
-                    ${result.actualWidth && result.actualHeight ? 
-                        ` (Actual: ${result.actualWidth} × ${result.actualHeight})` : ''}
+        if (resolutionList) {
+            resolutionList.innerHTML = results.map(result => `
+                <div class="resolution-item">
+                    <div class="resolution-info">
+                        ${result.width} × ${result.height}
+                        ${result.actualWidth && result.actualHeight ? 
+                            ` (Actual: ${result.actualWidth} × ${result.actualHeight})` : ''}
+                    </div>
+                    <div class="resolution-status ${result.status}">
+                        ${result.status === 'success' ? '✅' : 
+                          result.status === 'warning' ? '⚠️' : '❌'}
+                    </div>
                 </div>
-                <div class="resolution-status ${result.status}">
-                    ${result.status === 'success' ? '✅' : 
-                      result.status === 'warning' ? '⚠️' : '❌'}
-                </div>
-            </div>
-        `).join('');
+            `).join('');
+        }
     }
     
     async runNetworkCheck() {
+        // Check if this test has been skipped
+        if (this.skippedTests.has('network')) {
+            console.log('Network test was skipped, not running');
+            return;
+        }
+        
         this.updateStep(4);
         this.showMessage('Testing network connectivity...', 'info');
         
@@ -766,6 +919,12 @@ class WebRTCTroubleshooting {
             
             this.stopNetworkMonitoring();
             await this.cleanupAgoraClients();
+            
+            // Check if test was skipped before setting results
+            if (this.skippedTests.has('network')) {
+                console.log('Network test was skipped, not setting results');
+                return;
+            }
             
             // Analyze network results
             const bitrateData = this.chartData.bitrate;
@@ -807,7 +966,20 @@ class WebRTCTroubleshooting {
             
             this.nextStep();
             
+            // If this is the last test and we're running individually, show the report
+            if (this.currentStep >= 5) {
+                setTimeout(() => {
+                    this.showTestReport();
+                }, 1000);
+            }
+            
         } catch (error) {
+            // Check if test was skipped before setting results
+            if (this.skippedTests.has('network')) {
+                console.log('Network test was skipped, not setting results');
+                return;
+            }
+            
             this.testResults.network = {
                 status: 'error',
                 message: error.message,
@@ -1105,7 +1277,8 @@ class WebRTCTroubleshooting {
         // Create summary (keep simple, no collapsible here)
         const summaryItems = Object.entries(this.testResults).map(([key, result]) => {
             const statusIcon = result.status === 'success' ? '✅' : 
-                              result.status === 'warning' ? '⚠️' : '❌';
+                              result.status === 'warning' ? '⚠️' : 
+                              result.status === 'skipped' ? '⏭️' : '❌';
             const statusClass = result.status;
             
             return `
@@ -1122,7 +1295,7 @@ class WebRTCTroubleshooting {
         
         // Create detailed report
         const detailsContent = Object.entries(this.testResults).map(([key, result]) => {
-            let detailContent = `<div class="report-section" data-details-key="${key}">
+            let detailContent = `<div class="report-section ${result.status === 'skipped' ? 'skipped' : ''}" data-details-key="${key}">
                 <h4 class="collapsible-heading">
                     ${this.getTestName(key)}
                     <span class="collapse-arrow">▼</span>
@@ -1130,7 +1303,15 @@ class WebRTCTroubleshooting {
                 <div class="test-content">
                 <p class="test-message">${result.message}</p>`;
             
-            if (key === 'browser' && result.details) {
+            // Handle skipped tests
+            if (result.status === 'skipped') {
+                detailContent += `
+                    <div class="skipped-test-info">
+                        <p><strong>Test Status:</strong> Skipped by user</p>
+                        <p><strong>Reason:</strong> User chose to skip this test</p>
+                    </div>
+                `;
+            } else if (key === 'browser' && result.details) {
                 detailContent += `
                     <div class="browser-details">
                         <div class="detail-item">
@@ -1393,10 +1574,21 @@ class WebRTCTroubleshooting {
     
     
     nextStep() {
+        // Hide skip button for the current step when moving to next
+        const currentTestName = this.getCurrentTestName();
+        if (currentTestName) {
+            this.hideSkipButton(currentTestName);
+        }
+        
         this.currentStep++;
         if (this.currentStep < 5) {
             this.updateStep(this.currentStep);
         }
+    }
+    
+    getCurrentTestName() {
+        const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
+        return testNames[this.currentStep] || null;
     }
     
     updateStepResult(elementId, message, type) {
@@ -1485,8 +1677,12 @@ class WebRTCTroubleshooting {
             Object.entries(this.testResults).map(([key, result]) => {
                 let details = `${this.getTestName(key)}: ${result.status} - ${result.message}`;
                 
+                // Handle skipped tests
+                if (result.status === 'skipped') {
+                    details = `${this.getTestName(key)}: SKIPPED - ${result.message}`;
+                }
                 // Add more details for specific tests
-                if (key === 'network' && result.data) {
+                else if (key === 'network' && result.data) {
                     const bitrate = result.data.bitrate;
                     const packetLoss = result.data.packetLoss;
                     if (bitrate && bitrate.length > 1) {
@@ -1542,6 +1738,10 @@ class WebRTCTroubleshooting {
         this.isTesting = false;
         this.currentStep = 0;
         this.resetTestResults();
+        this.skippedTests.clear();
+        
+        // Hide all skip buttons
+        this.hideAllSkipButtons();
         
         // Reset UI
         document.getElementById('testConfig').style.display = 'block';
@@ -2015,6 +2215,163 @@ class WebRTCTroubleshooting {
 
     delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    
+    skipTest(testName) {
+        console.log(`Skipping test: ${testName}`);
+        
+        // Clear any timeouts for the current test
+        if (testName === 'speaker' && this.speakerTimeout) {
+            clearTimeout(this.speakerTimeout);
+            this.speakerTimeout = null;
+        }
+        
+        // Stop any ongoing operations for this test
+        this.stopTestOperations(testName);
+        
+        // Mark test as skipped
+        this.skippedTests.add(testName);
+        
+        // Set test result to skipped
+        this.testResults[testName] = {
+            status: 'skipped',
+            message: 'Test skipped by user'
+        };
+        
+        // Update the UI to show skipped state
+        const resultElementId = this.getResultElementId(testName);
+        this.updateStepResult(resultElementId, '⏭️ Test Skipped', 'skipped');
+        
+        // Hide the skip button
+        const skipButtonId = this.getSkipButtonId(testName);
+        const skipButton = document.getElementById(skipButtonId);
+        if (skipButton) {
+            skipButton.style.display = 'none';
+        }
+        
+        // Move to next step
+        this.nextStep();
+        
+        this.showMessage(`${this.getTestName(testName)} skipped`, 'info');
+        
+        // If this is the last test, show the report
+        const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
+        const currentIndex = testNames.indexOf(testName);
+        if (currentIndex === testNames.length - 1) {
+            // This is the last test, show the report
+            setTimeout(() => {
+                this.showTestReport();
+            }, 1000);
+        } else {
+            // Not the last test, continue with the next test
+            this.continueWithNextTest(testName);
+        }
+    }
+    
+    continueWithNextTest(currentTestName) {
+        const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
+        const currentIndex = testNames.indexOf(currentTestName);
+        const nextTestName = testNames[currentIndex + 1];
+        
+        if (nextTestName && !this.skippedTests.has(nextTestName)) {
+            // Start the next test after a short delay
+            setTimeout(() => {
+                this.runNextTest(nextTestName);
+            }, 1000);
+        }
+    }
+    
+    async runNextTest(testName) {
+        console.log(`Running next test: ${testName}`);
+        try {
+            switch (testName) {
+                case 'microphone':
+                    await this.runMicrophoneCheck();
+                    break;
+                case 'speaker':
+                    await this.runSpeakerCheck();
+                    break;
+                case 'resolution':
+                    await this.runResolutionCheck();
+                    break;
+                case 'network':
+                    await this.runNetworkCheck();
+                    break;
+            }
+        } catch (error) {
+            console.error(`Error running ${testName}:`, error);
+        }
+    }
+    
+    stopTestOperations(testName) {
+        // Stop any ongoing operations for the specified test
+        if (testName === 'network') {
+            // Stop network test operations
+            if (this.networkInterval) {
+                clearInterval(this.networkInterval);
+                this.networkInterval = null;
+            }
+            // Leave Agora clients and channels as they are - they'll be cleaned up later
+        } else if (testName === 'resolution') {
+            // Stop resolution test operations
+            if (this.resolutionInterval) {
+                clearInterval(this.resolutionInterval);
+                this.resolutionInterval = null;
+            }
+            // Set flag to stop the resolution test loop
+            this.isResolutionTesting = false;
+        } else if (testName === 'speaker') {
+            // Speaker test timeout is already handled above
+        }
+        // Browser, microphone tests don't have ongoing operations to stop
+    }
+    
+    getResultElementId(testName) {
+        const elementMap = {
+            'browser': 'browserResult',
+            'microphone': 'micResult',
+            'speaker': 'speakerResult',
+            'resolution': 'resolutionResult',
+            'network': 'networkResult'
+        };
+        return elementMap[testName];
+    }
+    
+    getSkipButtonId(testName) {
+        const buttonMap = {
+            'browser': 'skipBrowserBtn',
+            'microphone': 'skipMicBtn',
+            'speaker': 'skipSpeakerBtn',
+            'resolution': 'skipResolutionBtn',
+            'network': 'skipNetworkBtn'
+        };
+        return buttonMap[testName];
+    }
+    
+    showSkipButtons() {
+        // Show all skip buttons
+        document.getElementById('skipBrowserBtn').style.display = 'inline-block';
+        document.getElementById('skipMicBtn').style.display = 'inline-block';
+        document.getElementById('skipSpeakerBtn').style.display = 'inline-block';
+        document.getElementById('skipResolutionBtn').style.display = 'inline-block';
+        document.getElementById('skipNetworkBtn').style.display = 'inline-block';
+    }
+    
+    hideSkipButton(testName) {
+        const skipButtonId = this.getSkipButtonId(testName);
+        const skipButton = document.getElementById(skipButtonId);
+        if (skipButton) {
+            skipButton.style.display = 'none';
+        }
+    }
+    
+    hideAllSkipButtons() {
+        // Hide all skip buttons initially
+        document.getElementById('skipBrowserBtn').style.display = 'none';
+        document.getElementById('skipMicBtn').style.display = 'none';
+        document.getElementById('skipSpeakerBtn').style.display = 'none';
+        document.getElementById('skipResolutionBtn').style.display = 'none';
+        document.getElementById('skipNetworkBtn').style.display = 'none';
     }
 }
 
