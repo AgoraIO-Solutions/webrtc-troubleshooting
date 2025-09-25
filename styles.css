@@ -1625,8 +1625,8 @@ header {
     }
     
     .path-columns {
-        grid-template-columns: 1fr 1fr !important; /* Force two columns even on mobile */
-        gap: 10px;
+        grid-template-columns: 1fr !important; /* Single column on mobile */
+        gap: 15px;
     }
     
     .path-column {
@@ -1658,8 +1658,8 @@ header {
     }
     
     .path-columns {
-        grid-template-columns: 1fr 1fr !important; /* Force two columns */
-        gap: 8px;
+        grid-template-columns: 1fr !important; /* Single column on small mobile */
+        gap: 12px;
     }
     
     .path-column {
