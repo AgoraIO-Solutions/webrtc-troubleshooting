@@ -566,6 +566,16 @@ header {
     border: 1px solid var(--border-color);
     border-radius: 5px;
     padding: 10px;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.chart-container-report canvas,
+.chart-container-report svg {
+    max-width: 100% !important;
+    height: auto !important;
 }
 
 .network-stats {
@@ -899,6 +909,16 @@ header {
     padding: 15px;
     border: 1px solid var(--border-color);
     min-height: 300px;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.chart-container canvas,
+.chart-container svg {
+    max-width: 100% !important;
+    height: auto !important;
 }
 
 /* Test Report */
@@ -1281,6 +1301,8 @@ header {
 @media (max-width: 768px) {
     .container {
         padding: 10px;
+        max-width: 100%;
+        width: 100%;
     }
     
     header {
@@ -1309,6 +1331,11 @@ header {
     
     .network-charts {
         grid-template-columns: 1fr;
+    }
+    
+    .chart-container {
+        min-height: 250px;
+        padding: 10px;
     }
     
     .video-container {
@@ -1549,7 +1576,6 @@ header {
     gap: 20px;
     margin-top: 15px;
     width: 100%;
-    min-width: 800px; /* Force minimum width */
 }
 
 .path-column {
@@ -1627,6 +1653,7 @@ header {
     .path-columns {
         grid-template-columns: 1fr !important; /* Single column on mobile */
         gap: 15px;
+        width: 100%;
     }
     
     .path-column {
@@ -1660,6 +1687,20 @@ header {
     .path-columns {
         grid-template-columns: 1fr !important; /* Single column on small mobile */
         gap: 12px;
+    }
+    
+    .chart-container {
+        min-height: 200px;
+        padding: 8px;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    
+    .network-charts {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
     }
     
     .path-column {
