@@ -239,6 +239,46 @@
             <div id="test-send" style="display: none; width: 320px; height: 240px; background: #000;"></div>
             <div id="test-recv" style="display: none; width: 320px; height: 240px; background: #000;"></div>
 
+            <!-- Device Selection Modal -->
+            <div class="modal" id="deviceSelectionModal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Select Camera and Microphone</h3>
+                        <button class="close-btn" id="closeDeviceModal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="device-selection">
+                            <div class="device-group">
+                                <label for="cameraSelect">Camera:</label>
+                                <select id="cameraSelect" class="device-select">
+                                    <option value="">Loading cameras...</option>
+                                </select>
+                            </div>
+                            <div class="device-group">
+                                <label for="microphoneSelect">Microphone:</label>
+                                <select id="microphoneSelect" class="device-select">
+                                    <option value="">Loading microphones...</option>
+                                </select>
+                            </div>
+                            <div class="device-preview">
+                                <div class="preview-container">
+                                    <div id="devicePreview" class="video-preview">
+                                        <div class="preview-placeholder">
+                                            <span>📹</span>
+                                            <p>Camera preview will appear here</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="cancelDeviceSelection" class="btn-secondary">Cancel</button>
+                        <button id="confirmDeviceSelection" class="btn-primary">Start Live Test</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Live Test Modal -->
             <div class="modal" id="liveTestModal" style="display: none;">
                 <div class="modal-content">

@@ -93,12 +93,17 @@ class WebRTCTroubleshooting {
         document.getElementById('closeModal').addEventListener('click', () => this.closeModal());
         document.getElementById('endTestBtn').addEventListener('click', () => this.endLiveTest());
         
+        // Device selection modal controls
+        document.getElementById('closeDeviceModal').addEventListener('click', () => this.closeDeviceModal());
+        document.getElementById('cancelDeviceSelection').addEventListener('click', () => this.closeDeviceModal());
+        document.getElementById('confirmDeviceSelection').addEventListener('click', () => this.confirmDeviceSelection());
+        
         // Report actions
         document.getElementById('tryAgainBtn').addEventListener('click', () => this.resetTest());
         document.getElementById('shareReportBtn').addEventListener('click', () => this.shareReport());
         
         // Seeing is believing controls
-        document.getElementById('startLiveTestBtn').addEventListener('click', () => this.startLiveTest());
+        document.getElementById('startLiveTestBtn').addEventListener('click', () => this.showDeviceSelection());
         document.getElementById('stopLiveTestBtn').addEventListener('click', () => this.stopLiveTest());
     }
     
@@ -1469,14 +1474,182 @@ class WebRTCTroubleshooting {
         document.getElementById('liveTestModal').style.display = 'none';
     }
     
+    closeDeviceModal() {
+        document.getElementById('deviceSelectionModal').style.display = 'none';
+        // Stop any preview video
+        this.stopDevicePreview();
+    }
+    
     endLiveTest() {
         this.closeModal();
         this.showMessage('Live test ended', 'info');
     }
     
-    async startLiveTest() {
+    async showDeviceSelection() {
         try {
-            this.showMessage('Starting live test...', 'info');
+            // Show the device selection modal
+            document.getElementById('deviceSelectionModal').style.display = 'flex';
+            
+            // Enumerate devices
+            await this.enumerateDevices();
+            
+            // Set up device change listeners
+            this.setupDeviceChangeListeners();
+            
+        } catch (error) {
+            console.error('Error showing device selection:', error);
+            this.showMessage(`Error accessing devices: ${error.message}`, 'error');
+        }
+    }
+    
+    async enumerateDevices() {
+        try {
+            // Get available devices
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            
+            // Filter cameras and microphones
+            const cameras = devices.filter(device => device.kind === 'videoinput');
+            const microphones = devices.filter(device => device.kind === 'audioinput');
+            
+            // Populate camera dropdown
+            const cameraSelect = document.getElementById('cameraSelect');
+            cameraSelect.innerHTML = '<option value="">Select a camera...</option>';
+            
+            cameras.forEach((camera, index) => {
+                const option = document.createElement('option');
+                option.value = camera.deviceId;
+                option.textContent = camera.label || `Camera ${index + 1}`;
+                cameraSelect.appendChild(option);
+            });
+            
+            // Populate microphone dropdown
+            const microphoneSelect = document.getElementById('microphoneSelect');
+            microphoneSelect.innerHTML = '<option value="">Select a microphone...</option>';
+            
+            microphones.forEach((microphone, index) => {
+                const option = document.createElement('option');
+                option.value = microphone.deviceId;
+                option.textContent = microphone.label || `Microphone ${index + 1}`;
+                microphoneSelect.appendChild(option);
+            });
+            
+            // Auto-select first devices if available
+            if (cameras.length > 0) {
+                cameraSelect.value = cameras[0].deviceId;
+                this.updateDevicePreview();
+            }
+            if (microphones.length > 0) {
+                microphoneSelect.value = microphones[0].deviceId;
+            }
+            
+        } catch (error) {
+            console.error('Error enumerating devices:', error);
+            this.showMessage('Could not access device list. Please check permissions.', 'error');
+        }
+    }
+    
+    setupDeviceChangeListeners() {
+        const cameraSelect = document.getElementById('cameraSelect');
+        const microphoneSelect = document.getElementById('microphoneSelect');
+        
+        cameraSelect.addEventListener('change', () => {
+            this.updateDevicePreview();
+        });
+        
+        // Microphone selection doesn't need preview, but we can log it
+        microphoneSelect.addEventListener('change', () => {
+            console.log('Selected microphone:', microphoneSelect.value);
+        });
+    }
+    
+    async updateDevicePreview() {
+        const cameraSelect = document.getElementById('cameraSelect');
+        const selectedCameraId = cameraSelect.value;
+        
+        if (!selectedCameraId) {
+            // Show placeholder
+            const preview = document.getElementById('devicePreview');
+            preview.innerHTML = `
+                <div class="preview-placeholder">
+                    <span>📹</span>
+                    <p>Camera preview will appear here</p>
+                </div>
+            `;
+            return;
+        }
+        
+        try {
+            // Stop any existing preview
+            this.stopDevicePreview();
+            
+            // Create new preview stream
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: selectedCameraId } },
+                audio: false
+            });
+            
+            // Create video element
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.autoplay = true;
+            video.muted = true;
+            video.style.width = '100%';
+            video.style.height = '100%';
+            video.style.objectFit = 'cover';
+            
+            // Update preview container
+            const preview = document.getElementById('devicePreview');
+            preview.innerHTML = '';
+            preview.appendChild(video);
+            
+            // Store stream for cleanup
+            this.devicePreviewStream = stream;
+            
+        } catch (error) {
+            console.error('Error creating device preview:', error);
+            const preview = document.getElementById('devicePreview');
+            preview.innerHTML = `
+                <div class="preview-placeholder">
+                    <span>❌</span>
+                    <p>Could not access selected camera</p>
+                </div>
+            `;
+        }
+    }
+    
+    stopDevicePreview() {
+        if (this.devicePreviewStream) {
+            this.devicePreviewStream.getTracks().forEach(track => track.stop());
+            this.devicePreviewStream = null;
+        }
+    }
+    
+    async confirmDeviceSelection() {
+        const cameraSelect = document.getElementById('cameraSelect');
+        const microphoneSelect = document.getElementById('microphoneSelect');
+        
+        const selectedCamera = cameraSelect.value;
+        const selectedMicrophone = microphoneSelect.value;
+        
+        if (!selectedCamera || !selectedMicrophone) {
+            this.showMessage('Please select both a camera and microphone', 'warning');
+            return;
+        }
+        
+        // Store selected devices
+        this.selectedCameraId = selectedCamera;
+        this.selectedMicrophoneId = selectedMicrophone;
+        
+        // Close device selection modal
+        this.closeDeviceModal();
+        
+        // Start live test with selected devices
+        await this.startLiveTestWithDevices();
+    }
+    
+    async startLiveTestWithDevices() {
+        try {
+            this.showMessage('Starting live test with selected devices...', 'info');
             
             // Initialize live test clients
             this.liveSendClient = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
@@ -1492,10 +1665,13 @@ class WebRTCTroubleshooting {
                 await this.liveRecvClient.startProxyServer(this.proxyMode);
             }
             
-            // Create tracks for live test
+            // Create tracks with selected devices
             const [liveAudioTrack, liveVideoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks(
-                {},
-                { encoderConfig: '720p_2' }
+                { microphoneId: this.selectedMicrophoneId },
+                { 
+                    cameraId: this.selectedCameraId,
+                    encoderConfig: '720p_2' 
+                }
             );
             
             this.liveAudioTrack = liveAudioTrack;
@@ -1536,6 +1712,7 @@ class WebRTCTroubleshooting {
             this.showMessage(`Live test failed: ${error.message}`, 'error');
         }
     }
+    
     
     startLiveMonitoring() {
         this.liveMonitorInterval = setInterval(async () => {
