@@ -1721,17 +1721,54 @@ class WebRTCTroubleshooting {
                             delete candidateDetails.pathSummary;
                         }
                         
-                        // Loop through remaining properties and add them as detail items
-                        Object.entries(candidateDetails).forEach(([key, value]) => {
-                            if (value !== undefined && value !== null && value !== '') {
+                        // Create side-by-side comparison layout
+                        const localFields = ['localIp', 'localIpPort', 'localPublicIp', 'localPublicPort', 'localCandidate', 'protocol', 'networkType'];
+                        const remoteFields = ['remoteIp', 'remotePort', 'remoteCandidate', 'protocolRemote'];
+                        
+                        detailContent += `
+                            <div class="path-columns">
+                                <div class="path-column local-column">
+                                    <h6 class="column-header">Local</h6>
+                                    <div class="column-details">
+                        `;
+                        
+                        // Add local details - only show fields that exist
+                        localFields.forEach(field => {
+                            if (candidateDetails[field] !== undefined && candidateDetails[field] !== null && candidateDetails[field] !== '') {
                                 detailContent += `
                                     <div class="path-detail">
-                                        <span class="detail-label">${formatLabel(key)}:</span>
-                                        <span class="detail-value">${value}</span>
+                                        <span class="detail-label">${formatLabel(field)}:</span>
+                                        <span class="detail-value">${candidateDetails[field]}</span>
                                     </div>
                                 `;
                             }
                         });
+                        
+                        detailContent += `
+                                    </div>
+                                </div>
+                                <div class="path-column remote-column">
+                                    <h6 class="column-header">Remote</h6>
+                                    <div class="column-details">
+                        `;
+                        
+                        // Add remote details - only show fields that exist
+                        remoteFields.forEach(field => {
+                            if (candidateDetails[field] !== undefined && candidateDetails[field] !== null && candidateDetails[field] !== '') {
+                                detailContent += `
+                                    <div class="path-detail">
+                                        <span class="detail-label">${formatLabel(field)}:</span>
+                                        <span class="detail-value">${candidateDetails[field]}</span>
+                                    </div>
+                                `;
+                            }
+                        });
+                        
+                        detailContent += `
+                                    </div>
+                                </div>
+                            </div>
+                        `;
                         
                         detailContent += `
                             </div>
