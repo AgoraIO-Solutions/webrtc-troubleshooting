@@ -42,8 +42,8 @@ class WebRTCTroubleshooting {
         this.bitrateChart = null;
         this.packetLossChart = null;
         this.chartData = {
-            bitrate: [['Time', 'Video Bitrate', 'Audio Bitrate']],
-            packetLoss: [['Time', 'Video Packet Loss', 'Audio Packet Loss']]
+            bitrate: [['Time', 'Local Video Bitrate', 'Local Audio Bitrate', 'Remote Video Bitrate', 'Remote Audio Bitrate']],
+            packetLoss: [['Time', 'Local Video Packet Loss', 'Local Audio Packet Loss', 'Remote Video Packet Loss', 'Remote Audio Packet Loss']]
         };
         
         this.init();
@@ -863,6 +863,9 @@ class WebRTCTroubleshooting {
                 const remoteVideoStats = await this.recvClient.getRemoteVideoStats();
                 const remoteAudioStats = await this.recvClient.getRemoteAudioStats();
                 
+                // Call the new updateStats method for debugging
+                await this.updateStats(this.sendClient, this.recvClient);
+                
                 const time = Date.now() - this.testStartTime;
                 
                 // Debug logging to see what stats we're getting
@@ -884,50 +887,54 @@ class WebRTCTroubleshooting {
                     console.log('🔍 First Local Audio Object Keys:', Object.keys(localAudioStats[firstLocalAudioKey]));
                 }
                 
-                // Calculate bitrates - video from sendStats, audio from local or remote stats
-                const videoBitrate = Number(sendStats.SendBitrate || sendStats.sendBitrate || sendStats.videoSendBitrate || 0) * 0.001; // Convert to kbps
-                
-                // Get audio bitrate - try local audio stats first, then remote
+                // Calculate all 4 bitrates
+                const localVideoKeys = Object.keys(localVideoStats);
                 const localAudioKeys = Object.keys(localAudioStats);
+                const remoteVideoKeys = Object.keys(remoteVideoStats);
                 const remoteAudioKeys = Object.keys(remoteAudioStats);
                 
-                let audioBitrate = 0;
-                if (localAudioKeys.length > 0) {
-                    // Try to get audio bitrate from local audio stats (send side)
-                    audioBitrate = Number(localAudioStats[localAudioKeys[0]]?.sendBitrate || localAudioStats[localAudioKeys[0]]?.bitrate || 0) * 0.001;
+                // Local video bitrate - read directly from the flat object
+                let localVideoBitrate = Number(localVideoStats?.sendBitrate || 0) * 0.001;
+                
+                // Local audio bitrate - read directly from the flat object
+                let localAudioBitrate = Number(localAudioStats?.sendBitrate || 0) * 0.001;
+                
+                // Remote video bitrate
+                let remoteVideoBitrate = 0;
+                if (remoteVideoKeys.length > 0) {
+                    remoteVideoBitrate = Number(remoteVideoStats[remoteVideoKeys[0]]?.receiveBitrate || remoteVideoStats[remoteVideoKeys[0]]?.bitrate || 0) * 0.001;
                 }
                 
-                if (audioBitrate === 0 && remoteAudioKeys.length > 0) {
-                    // Fallback to remote audio stats (receive side)
-                    audioBitrate = Number(remoteAudioStats[remoteAudioKeys[0]]?.receiveBitrate || remoteAudioStats[remoteAudioKeys[0]]?.bitrate || 0) * 0.001;
+                // Remote audio bitrate
+                let remoteAudioBitrate = 0;
+                if (remoteAudioKeys.length > 0) {
+                    remoteAudioBitrate = Number(remoteAudioStats[remoteAudioKeys[0]]?.receiveBitrate || remoteAudioStats[remoteAudioKeys[0]]?.bitrate || 0) * 0.001;
                 }
-                
-                // Debug the audio bitrate calculation
-                console.log('🔍 Final audio bitrate before validation:', audioBitrate);
-                console.log('🔍 Local audio keys length:', localAudioKeys.length);
-                console.log('🔍 Remote audio keys length:', remoteAudioKeys.length);
                 
                 // Ensure we have valid numbers and handle edge cases
-                const validVideoBitrate = isNaN(videoBitrate) || videoBitrate < 0 ? 0 : Math.max(0, videoBitrate);
-                const validAudioBitrate = isNaN(audioBitrate) || audioBitrate < 0 ? 0 : Math.max(0, audioBitrate);
+                const validLocalVideoBitrate = isNaN(localVideoBitrate) || localVideoBitrate < 0 ? 0 : Math.max(0, localVideoBitrate);
+                const validLocalAudioBitrate = isNaN(localAudioBitrate) || localAudioBitrate < 0 ? 0 : Math.max(0, localAudioBitrate);
+                const validRemoteVideoBitrate = isNaN(remoteVideoBitrate) || remoteVideoBitrate < 0 ? 0 : Math.max(0, remoteVideoBitrate);
+                const validRemoteAudioBitrate = isNaN(remoteAudioBitrate) || remoteAudioBitrate < 0 ? 0 : Math.max(0, remoteAudioBitrate);
                 
-                // Calculate packet loss - get from remote stats
-                const remoteVideoKeys = Object.keys(remoteVideoStats);
+                // Calculate packet loss - both local and remote
+                const localVideoPacketLoss = Number(localVideoStats?.sendPacketsLost || localVideoStats?.currentPacketLossRate || 0);
+                const localAudioPacketLoss = Number(localAudioStats?.sendPacketsLost || localAudioStats?.currentPacketLossRate || 0);
                 
-                const videoPacketLoss = remoteVideoKeys.length > 0 ? 
+                const remoteVideoPacketLoss = remoteVideoKeys.length > 0 ? 
                     (remoteVideoStats[remoteVideoKeys[0]]?.receivePacketsLost || remoteVideoStats[remoteVideoKeys[0]]?.packetLossRate || 0) : 0;
-                const audioPacketLoss = remoteAudioKeys.length > 0 ? 
+                const remoteAudioPacketLoss = remoteAudioKeys.length > 0 ? 
                     (remoteAudioStats[remoteAudioKeys[0]]?.receivePacketsLost || remoteAudioStats[remoteAudioKeys[0]]?.packetLossRate || 0) : 0;
                 
-                this.chartData.bitrate.push([time / 1000, validVideoBitrate, validAudioBitrate]);
-                this.chartData.packetLoss.push([time / 1000, videoPacketLoss, audioPacketLoss]);
+                this.chartData.bitrate.push([time / 1000, validLocalVideoBitrate, validLocalAudioBitrate, validRemoteVideoBitrate, validRemoteAudioBitrate]);
+                this.chartData.packetLoss.push([time / 1000, localVideoPacketLoss, localAudioPacketLoss, remoteVideoPacketLoss, remoteAudioPacketLoss]);
                 
                 // Debug logging
-                console.log(`Network stats - Video: ${validVideoBitrate.toFixed(1)}kbps, Audio: ${validAudioBitrate.toFixed(1)}kbps, Video PL: ${videoPacketLoss.toFixed(1)}%, Audio PL: ${audioPacketLoss.toFixed(1)}%, Time: ${(time/1000).toFixed(1)}s`);
+                console.log(`Network stats - Local Video: ${validLocalVideoBitrate.toFixed(1)}kbps, Local Audio: ${validLocalAudioBitrate.toFixed(1)}kbps, Remote Video: ${validRemoteVideoBitrate.toFixed(1)}kbps, Remote Audio: ${validRemoteAudioBitrate.toFixed(1)}kbps, Local Video PL: ${localVideoPacketLoss.toFixed(1)}%, Local Audio PL: ${localAudioPacketLoss.toFixed(1)}%, Remote Video PL: ${remoteVideoPacketLoss.toFixed(1)}%, Remote Audio PL: ${remoteAudioPacketLoss.toFixed(1)}%, Time: ${(time/1000).toFixed(1)}s`);
                 
                 // Debug: Check if we're getting valid audio data
-                if (validAudioBitrate > 0) {
-                    console.log('✅ Audio bitrate is working:', validAudioBitrate);
+                if (validLocalAudioBitrate > 0 || validRemoteAudioBitrate > 0) {
+                    console.log('✅ Audio bitrate is working - Local:', validLocalAudioBitrate, 'Remote:', validRemoteAudioBitrate);
                     console.log('📊 Audio stats details:', remoteAudioKeys.length > 0 ? remoteAudioStats[remoteAudioKeys[0]] : 'No remote audio stats');
                 } else {
                     console.log('❌ Audio bitrate is 0 - checking remoteAudioStats properties:', remoteAudioKeys.length > 0 ? Object.keys(remoteAudioStats[remoteAudioKeys[0]]) : 'No remote audio stats');
@@ -972,11 +979,11 @@ class WebRTCTroubleshooting {
             // Ensure we have valid data arrays
             const bitrateData = this.chartData.bitrate.length > 1 ? 
                 this.chartData.bitrate : 
-                [['Time', 'Video Bitrate', 'Audio Bitrate'], [0, 0, 0]];
+                [['Time', 'Local Video Bitrate', 'Local Audio Bitrate', 'Remote Video Bitrate', 'Remote Audio Bitrate'], [0, 0, 0, 0, 0]];
             
             const packetLossData = this.chartData.packetLoss.length > 1 ? 
                 this.chartData.packetLoss : 
-                [['Time', 'Video Packet Loss', 'Audio Packet Loss'], [0, 0, 0]];
+                [['Time', 'Local Video Packet Loss', 'Local Audio Packet Loss', 'Remote Video Packet Loss', 'Remote Audio Packet Loss'], [0, 0, 0, 0, 0]];
             
             try {
                 this.bitrateChart.draw(google.visualization.arrayToDataTable(bitrateData), bitrateOptions);
@@ -1168,15 +1175,19 @@ class WebRTCTroubleshooting {
                     <div class="network-stats">
                         <div class="stat-item">
                             <span class="stat-label">Video Bitrate:</span>
-                            <span class="stat-value">${(result.data.bitrate[1] || 0).toFixed(1)} kbps</span>
+                            <span class="stat-value">Send: ${(result.data.bitrate[1] || 0).toFixed(1)} kbps / Recv: ${(result.data.bitrate[3] || 0).toFixed(1)} kbps</span>
                         </div>
                         <div class="stat-item">
                             <span class="stat-label">Audio Bitrate:</span>
-                            <span class="stat-value">${(result.data.bitrate[2] || 0).toFixed(1)} kbps</span>
+                            <span class="stat-value">Send: ${(result.data.bitrate[2] || 0).toFixed(1)} kbps / Recv: ${(result.data.bitrate[4] || 0).toFixed(1)} kbps</span>
                         </div>
                         <div class="stat-item">
                             <span class="stat-label">Video Packet Loss:</span>
-                            <span class="stat-value">${(result.data.packetLoss[1] || 0).toFixed(1)}%</span>
+                            <span class="stat-value">Send: ${(result.data.packetLoss[1] || 0).toFixed(1)}% / Recv: ${(result.data.packetLoss[3] || 0).toFixed(1)}%</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Audio Packet Loss:</span>
+                            <span class="stat-value">Send: ${(result.data.packetLoss[2] || 0).toFixed(1)}% / Recv: ${(result.data.packetLoss[4] || 0).toFixed(1)}%</span>
                         </div>
                     </div>
                 `;
@@ -1447,8 +1458,8 @@ class WebRTCTroubleshooting {
         
         // Reset charts
         this.chartData = {
-            bitrate: [['Time', 'Video Bitrate', 'Audio Bitrate']],
-            packetLoss: [['Time', 'Video Packet Loss', 'Audio Packet Loss']]
+            bitrate: [['Time', 'Local Video Bitrate', 'Local Audio Bitrate', 'Remote Video Bitrate', 'Remote Audio Bitrate']],
+            packetLoss: [['Time', 'Local Video Packet Loss', 'Local Audio Packet Loss', 'Remote Video Packet Loss', 'Remote Audio Packet Loss']]
         };
         
         this.showMessage('Test reset successfully', 'info');
@@ -1532,47 +1543,65 @@ class WebRTCTroubleshooting {
                 const sendStats = await this.liveSendClient.getRTCStats();
                 const recvStats = await this.liveRecvClient.getRTCStats();
                 const localAudioStats = await this.liveSendClient.getLocalAudioStats();
+                const localVideoStats = await this.liveSendClient.getLocalVideoStats();
                 const remoteVideoStats = await this.liveRecvClient.getRemoteVideoStats();
                 const remoteAudioStats = await this.liveRecvClient.getRemoteAudioStats();
                 
                 // Debug logging to see what stats we're getting
                 console.log('Send Stats:', sendStats);
                 console.log('Local Audio Stats:', localAudioStats);
+                console.log('Local Video Stats:', localVideoStats);
                 console.log('Remote Video Stats:', remoteVideoStats);
                 console.log('Remote Audio Stats:', remoteAudioStats);
+
+                // Stats logging function for debugging
+                await this.updateStats(this.liveSendClient, this.liveRecvClient);
                 
-                // Calculate bitrates - video from sendStats, audio from local or remote stats
-                const videoBitrate = Number(sendStats.SendBitrate || sendStats.sendBitrate || sendStats.videoSendBitrate || 0) * 0.001;
-                
-                // Get audio bitrate - try local audio stats first, then remote
+                // Calculate all 4 bitrates for live monitoring
+                const localVideoKeys = Object.keys(localVideoStats);
                 const localAudioKeys = Object.keys(localAudioStats);
+                const remoteVideoKeys = Object.keys(remoteVideoStats);
                 const remoteAudioKeys = Object.keys(remoteAudioStats);
                 
-                let audioBitrate = 0;
-                if (localAudioKeys.length > 0) {
-                    // Try to get audio bitrate from local audio stats (send side)
-                    audioBitrate = Number(localAudioStats[localAudioKeys[0]]?.sendBitrate || localAudioStats[localAudioKeys[0]]?.bitrate || 0) * 0.001;
+                // Local video bitrate - read directly from the flat object
+                let localVideoBitrate = Number(localVideoStats?.sendBitrate || 0) * 0.001;
+                
+                // Local audio bitrate - read directly from the flat object
+                let localAudioBitrate = Number(localAudioStats?.sendBitrate || 0) * 0.001;
+                
+                // Remote video bitrate
+                let remoteVideoBitrate = 0;
+                if (remoteVideoKeys.length > 0) {
+                    remoteVideoBitrate = Number(remoteVideoStats[remoteVideoKeys[0]]?.receiveBitrate || remoteVideoStats[remoteVideoKeys[0]]?.bitrate || 0) * 0.001;
                 }
                 
-                if (audioBitrate === 0 && remoteAudioKeys.length > 0) {
-                    // Fallback to remote audio stats (receive side)
-                    audioBitrate = Number(remoteAudioStats[remoteAudioKeys[0]]?.receiveBitrate || remoteAudioStats[remoteAudioKeys[0]]?.bitrate || 0) * 0.001;
+                // Remote audio bitrate
+                let remoteAudioBitrate = 0;
+                if (remoteAudioKeys.length > 0) {
+                    remoteAudioBitrate = Number(remoteAudioStats[remoteAudioKeys[0]]?.receiveBitrate || remoteAudioStats[remoteAudioKeys[0]]?.bitrate || 0) * 0.001;
                 }
                 
-                // Calculate packet loss
-                const remoteVideoKeys = Object.keys(remoteVideoStats);
+                // Ensure we have valid numbers
+                const validLocalVideoBitrate = isNaN(localVideoBitrate) || localVideoBitrate < 0 ? 0 : Math.max(0, localVideoBitrate);
+                const validLocalAudioBitrate = isNaN(localAudioBitrate) || localAudioBitrate < 0 ? 0 : Math.max(0, localAudioBitrate);
+                const validRemoteVideoBitrate = isNaN(remoteVideoBitrate) || remoteVideoBitrate < 0 ? 0 : Math.max(0, remoteVideoBitrate);
+                const validRemoteAudioBitrate = isNaN(remoteAudioBitrate) || remoteAudioBitrate < 0 ? 0 : Math.max(0, remoteAudioBitrate);
                 
-                const videoPacketLoss = remoteVideoKeys.length > 0 ? 
+                // Calculate packet loss - both local and remote
+                const localVideoPacketLoss = Number(localVideoStats?.sendPacketsLost || localVideoStats?.currentPacketLossRate || 0);
+                const localAudioPacketLoss = Number(localAudioStats?.sendPacketsLost || localAudioStats?.currentPacketLossRate || 0);
+                
+                const remoteVideoPacketLoss = remoteVideoKeys.length > 0 ? 
                     (remoteVideoStats[remoteVideoKeys[0]]?.receivePacketsLost || remoteVideoStats[remoteVideoKeys[0]]?.packetLossRate || 0) : 0;
-                const audioPacketLoss = remoteAudioKeys.length > 0 ? 
+                const remoteAudioPacketLoss = remoteAudioKeys.length > 0 ? 
                     (remoteAudioStats[remoteAudioKeys[0]]?.receivePacketsLost || remoteAudioStats[remoteAudioKeys[0]]?.packetLossRate || 0) : 0;
                 
                 // Debug the calculated values
-                console.log(`Calculated - Video: ${videoBitrate.toFixed(1)}kbps, Audio: ${audioBitrate.toFixed(1)}kbps, Video PL: ${videoPacketLoss.toFixed(1)}%, Audio PL: ${audioPacketLoss.toFixed(1)}%`);
+                console.log(`Live stats - Local Video: ${validLocalVideoBitrate.toFixed(1)}kbps, Local Audio: ${validLocalAudioBitrate.toFixed(1)}kbps, Remote Video: ${validRemoteVideoBitrate.toFixed(1)}kbps, Remote Audio: ${validRemoteAudioBitrate.toFixed(1)}kbps, Local Video PL: ${localVideoPacketLoss.toFixed(1)}%, Local Audio PL: ${localAudioPacketLoss.toFixed(1)}%, Remote Video PL: ${remoteVideoPacketLoss.toFixed(1)}%, Remote Audio PL: ${remoteAudioPacketLoss.toFixed(1)}%`);
                 
                 // Debug: Check if we're getting valid audio data
-                if (audioBitrate > 0) {
-                    console.log('✅ Live Audio bitrate is working:', audioBitrate);
+                if (validLocalAudioBitrate > 0 || validRemoteAudioBitrate > 0) {
+                    console.log('✅ Live Audio bitrate is working - Local:', validLocalAudioBitrate, 'Remote:', validRemoteAudioBitrate);
                 } else {
                     console.log('❌ Live Audio bitrate is 0 - checking remoteAudioStats properties:', remoteAudioKeys.length > 0 ? Object.keys(remoteAudioStats[remoteAudioKeys[0]]) : 'No remote audio stats');
                 }
@@ -1591,25 +1620,25 @@ class WebRTCTroubleshooting {
                 });
                 
                 if (liveVideoBitrateEl) {
-                    liveVideoBitrateEl.textContent = `${videoBitrate.toFixed(1)} kbps`;
+                    liveVideoBitrateEl.textContent = `Send: ${validLocalVideoBitrate.toFixed(1)} / Recv: ${validRemoteVideoBitrate.toFixed(1)} kbps`;
                 } else {
                     console.error('liveVideoBitrate element not found');
                 }
                 
                 if (liveAudioBitrateEl) {
-                    liveAudioBitrateEl.textContent = `${audioBitrate.toFixed(1)} kbps`;
+                    liveAudioBitrateEl.textContent = `Send: ${validLocalAudioBitrate.toFixed(1)} / Recv: ${validRemoteAudioBitrate.toFixed(1)} kbps`;
                 } else {
                     console.error('liveAudioBitrate element not found');
                 }
                 
                 if (liveVideoPacketLossEl) {
-                    liveVideoPacketLossEl.textContent = `${videoPacketLoss.toFixed(1)}%`;
+                    liveVideoPacketLossEl.textContent = `S: ${localVideoPacketLoss.toFixed(1)}% / R: ${remoteVideoPacketLoss.toFixed(1)}%`;
                 } else {
                     console.error('liveVideoPacketLoss element not found');
                 }
                 
                 if (liveAudioPacketLossEl) {
-                    liveAudioPacketLossEl.textContent = `${audioPacketLoss.toFixed(1)}%`;
+                    liveAudioPacketLossEl.textContent = `S: ${localAudioPacketLoss.toFixed(1)}% / R: ${remoteAudioPacketLoss.toFixed(1)}%`;
                 } else {
                     console.error('liveAudioPacketLoss element not found');
                 }
@@ -1670,6 +1699,41 @@ class WebRTCTroubleshooting {
         }
     }
     
+    async updateStats(sendClient, recvClient) {
+        try {
+            // Local stats (by track ID)
+            const localVideoStats = await sendClient.getLocalVideoStats();
+            const localAudioStats = await sendClient.getLocalAudioStats();
+
+            console.log("📹 Local Video Stats:");
+            Object.entries(localVideoStats).forEach(([trackId, stats]) => {
+                console.log(`TrackID: ${trackId}`, stats);
+            });
+
+            console.log("🎤 Local Audio Stats:");
+            Object.entries(localAudioStats).forEach(([trackId, stats]) => {
+                console.log(`TrackID: ${trackId}`, stats);
+            });
+
+            // Remote stats (by UID)
+            const remoteVideoStats = await recvClient.getRemoteVideoStats();
+            const remoteAudioStats = await recvClient.getRemoteAudioStats();
+
+            console.log("📥 Remote Video Stats:");
+            Object.entries(remoteVideoStats).forEach(([uid, stats]) => {
+                console.log(`UID: ${uid}`, stats);
+            });
+
+            console.log("🔈 Remote Audio Stats:");
+            Object.entries(remoteAudioStats).forEach(([uid, stats]) => {
+                console.log(`UID: ${uid}`, stats);
+            });
+
+        } catch (err) {
+            console.error("Error fetching stats:", err);
+        }
+    }
+
     delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
