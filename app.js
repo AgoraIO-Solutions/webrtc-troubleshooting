@@ -1426,14 +1426,31 @@ class WebRTCTroubleshooting {
     }
     
     downloadLogs() {
-        // Create a log file with test results
+        // Create a comprehensive log file with all test results and data
         const logData = {
             timestamp: new Date().toISOString(),
             appId: this.appId,
             channel: this.channel,
+            userId: this.userId,
+            token: this.token ? '***' : null, // Don't expose actual token
+            cloudProxyEnabled: this.isCloudProxyEnabled,
+            proxyMode: this.proxyMode,
             results: this.testResults,
+            // Include all the detailed chart data that was collected
+            chartData: {
+                bitrate: this.chartData.bitrate,
+                packetLoss: this.chartData.packetLoss
+            },
+            // Include browser and SDK info (no duplicates since testResults.browser.details has more info)
             browser: navigator.userAgent,
-            sdkVersion: AgoraRTC.VERSION
+            sdkVersion: AgoraRTC.VERSION,
+            // Include any live test data if available
+            liveTestData: this.liveSendClient ? {
+                hasLiveTest: true,
+                liveStats: {
+                    // Add any live monitoring data if needed
+                }
+            } : null
         };
         
         const blob = new Blob([JSON.stringify(logData, null, 2)], { type: 'application/json' });
@@ -1457,26 +1474,67 @@ class WebRTCTroubleshooting {
             sdkVersion: AgoraRTC.VERSION
         };
         
+        // Create a more detailed report text
         const reportText = `WebRTC Troubleshooting Report\n\n` +
+            `Generated: ${new Date().toLocaleString()}\n` +
             `Browser: ${navigator.userAgent}\n` +
-            `SDK Version: ${AgoraRTC.VERSION}\n\n` +
+            `SDK Version: ${AgoraRTC.VERSION}\n` +
+            `App ID: ${this.appId || 'Not set'}\n` +
+            `Channel: ${this.channel || 'Not set'}\n\n` +
             `Test Results:\n` +
-            Object.entries(this.testResults).map(([key, result]) => 
-                `${this.getTestName(key)}: ${result.status} - ${result.message}`
-            ).join('\n');
+            Object.entries(this.testResults).map(([key, result]) => {
+                let details = `${this.getTestName(key)}: ${result.status} - ${result.message}`;
+                
+                // Add more details for specific tests
+                if (key === 'network' && result.data) {
+                    const bitrate = result.data.bitrate;
+                    const packetLoss = result.data.packetLoss;
+                    if (bitrate && bitrate.length > 1) {
+                        details += `\n  - Video Bitrate: Send ${(bitrate[1] || 0).toFixed(1)}kbps / Recv ${(bitrate[3] || 0).toFixed(1)}kbps`;
+                        details += `\n  - Audio Bitrate: Send ${(bitrate[2] || 0).toFixed(1)}kbps / Recv ${(bitrate[4] || 0).toFixed(1)}kbps`;
+                    }
+                    if (packetLoss && packetLoss.length > 1) {
+                        details += `\n  - Video Packet Loss: Send ${(packetLoss[1] || 0).toFixed(1)}% / Recv ${(packetLoss[3] || 0).toFixed(1)}%`;
+                        details += `\n  - Audio Packet Loss: Send ${(packetLoss[2] || 0).toFixed(1)}% / Recv ${(packetLoss[4] || 0).toFixed(1)}%`;
+                    }
+                }
+                
+                if (key === 'resolution' && result.results) {
+                    const successCount = result.results.filter(r => r.status === 'success').length;
+                    details += `\n  - Supported Resolutions: ${successCount}/${result.results.length}`;
+                }
+                
+                return details;
+            }).join('\n\n');
         
-        if (navigator.share) {
+        // Try native sharing first (works on mobile and some desktop browsers)
+        if (navigator.share && navigator.canShare && navigator.canShare({ text: reportText })) {
             navigator.share({
                 title: 'WebRTC Troubleshooting Report',
                 text: reportText
+            }).then(() => {
+                this.showMessage('Report shared successfully', 'success');
+            }).catch((error) => {
+                console.log('Native sharing failed, falling back to clipboard:', error);
+                this.fallbackToClipboard(reportText);
             });
         } else {
             // Fallback to clipboard
+            this.fallbackToClipboard(reportText);
+        }
+    }
+    
+    fallbackToClipboard(reportText) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(reportText).then(() => {
                 this.showMessage('Report copied to clipboard', 'success');
             }).catch(() => {
-                this.showMessage('Could not share report', 'error');
+                this.showMessage('Could not copy to clipboard. Please copy manually.', 'error');
             });
+        } else {
+            // Last resort - show the text in an alert or prompt
+            this.showMessage('Please copy the report text manually', 'warning');
+            console.log('Report text:', reportText);
         }
     }
     
