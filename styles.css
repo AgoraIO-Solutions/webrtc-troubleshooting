@@ -493,7 +493,7 @@ header {
 }
 
 .test-content.collapsed {
-    display: none !important;
+    display: none;
 }
 
 .test-message {
