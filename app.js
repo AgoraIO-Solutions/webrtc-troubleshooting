@@ -897,8 +897,7 @@ class WebRTCTroubleshooting {
                 
                 try {
                     // Create video track with specific resolution
-                    const [audioTrack, videoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks(
-                        {},
+                    const videoTrack = await AgoraRTC.createCameraVideoTrack(
                         { encoderConfig: profile.resolution }
                     );
                     
@@ -926,7 +925,7 @@ class WebRTCTroubleshooting {
                     ]);
                     
                     // Additional wait to ensure video is fully rendered
-                    await this.delay(200);
+                    await this.delay(500);
                     
                     // Check if video is displaying correctly
                     const videoElement = document.querySelector('#test-send video');
@@ -952,7 +951,6 @@ class WebRTCTroubleshooting {
                     }
                     
                     // Clean up
-                    audioTrack.close();
                     videoTrack.close();
                     
                 } catch (error) {
@@ -964,7 +962,7 @@ class WebRTCTroubleshooting {
                 this.updateResolutionList(results);
                 
                 // Longer delay between tests - 3 seconds
-                await this.delay(500);
+                await this.delay(1000);
             }
             
             // Clear the flag
@@ -981,6 +979,8 @@ class WebRTCTroubleshooting {
                 message: `${results.filter(r => r.status === 'success').length}/${results.length} resolutions OK`,
                 results: results
             };
+
+            await this.delay(5000);
             
         } catch (error) {
             this.isResolutionTesting = false;
@@ -997,6 +997,7 @@ class WebRTCTroubleshooting {
             };
             this.updateStepResult('resolutionResult', `❌ Resolution test failed: ${error.message}`, 'error');
             throw error;
+            await this.delay(5000);
         }
     }
     
