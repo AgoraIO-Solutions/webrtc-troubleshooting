@@ -3,8 +3,10 @@ class WebRTCTroubleshooting {
     constructor() {
         this.appId = '';
         this.token = null;
+        this.receivingToken = null;
         this.channel = '';
         this.userId = null;
+        this.receivingUserId = null;
         this.isCloudProxyEnabled = false;
         this.proxyMode = 3;
         this.currentStep = 0;
@@ -197,8 +199,10 @@ class WebRTCTroubleshooting {
     async startTest() {
         this.appId = document.getElementById('appId').value;
         this.token = document.getElementById('token').value || null;
+        this.receivingToken = document.getElementById('receivingToken').value || null;
         this.channel = document.getElementById('channelName').value;
         this.userId = document.getElementById('userId').value ? parseInt(document.getElementById('userId').value) : null;
+        this.receivingUserId = document.getElementById('receivingUserId').value ? parseInt(document.getElementById('receivingUserId').value) : null;
         
         if (!this.appId || !this.channel) {
             this.showMessage('Please enter App ID and Channel Name', 'error');
@@ -908,7 +912,7 @@ class WebRTCTroubleshooting {
                     ]);
                     
                     // Additional wait to ensure video is fully rendered
-                    await this.delay(2000);
+                    await this.delay(200);
                     
                     // Check if video is displaying correctly
                     const videoElement = document.querySelector('#test-send video');
@@ -946,7 +950,7 @@ class WebRTCTroubleshooting {
                 this.updateResolutionList(results);
                 
                 // Longer delay between tests - 3 seconds
-                await this.delay(3000);
+                await this.delay(500);
             }
             
             // Clear the flag
@@ -1140,11 +1144,11 @@ class WebRTCTroubleshooting {
         );
         
         // Join channels
-        const sendUid = Math.floor(Math.random() * 100000) + 100000;
-        const recvUid = Math.floor(Math.random() * 100000) + 200000;
+        const sendUid = this.userId || Math.floor(Math.random() * 100000) + 100000;
+        const recvUid = this.receivingUserId || Math.floor(Math.random() * 100000) + 200000;
         
         await this.sendClient.join(this.appId, this.channel, this.token, sendUid);
-        await this.recvClient.join(this.appId, this.channel, this.token, recvUid);
+        await this.recvClient.join(this.appId, this.channel, this.receivingToken, recvUid);
         
         // Publish tracks
         await this.sendClient.publish([this.audioTrack, this.videoTrack]);
@@ -1952,8 +1956,10 @@ class WebRTCTroubleshooting {
             timestamp: new Date().toISOString(),
             appId: this.appId,
             channel: this.channel,
-            userId: this.userId,
-            token: this.token ? '***' : null, // Don't expose actual token
+            sendingUserId: this.userId,
+            receivingUserId: this.receivingUserId,
+            sendingToken: this.token ? '***' : null, // Don't expose actual token
+            receivingToken: this.receivingToken ? '***' : null, // Don't expose actual token
             cloudProxyEnabled: this.isCloudProxyEnabled,
             proxyMode: this.proxyMode,
             results: this.testResults,
@@ -2317,7 +2323,7 @@ class WebRTCTroubleshooting {
             const liveRecvUid = Math.floor(Math.random() * 100000) + 400000;
             
             await this.liveSendClient.join(this.appId, this.channel + '_live', this.token, liveSendUid);
-            await this.liveRecvClient.join(this.appId, this.channel + '_live', this.token, liveRecvUid);
+            await this.liveRecvClient.join(this.appId, this.channel + '_live', this.receivingToken, liveRecvUid);
             
             // Publish tracks
             await this.liveSendClient.publish([liveAudioTrack, liveVideoTrack]);
