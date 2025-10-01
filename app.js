@@ -51,6 +51,13 @@ class WebRTCTroubleshooting {
             packetLoss: [['Time', 'Local Video Packet Loss', 'Local Audio Packet Loss', 'Remote Video Packet Loss', 'Remote Audio Packet Loss']]
         };
         
+        // Store all ICE candidates and devices for logging
+        this.allIceCandidates = [];
+        this.availableDevices = {
+            cameras: [],
+            microphones: []
+        };
+        
         this.init();
     }
     
@@ -214,6 +221,13 @@ class WebRTCTroubleshooting {
         this.resetTestResults();
         this.skippedTests.clear();
         this.runningTests = new Set(); // Track which tests are currently running
+        
+        // Enumerate available devices for logging
+        try {
+            await this.enumerateDevices();
+        } catch (error) {
+            console.warn('Could not enumerate devices for logging:', error);
+        }
         
         // Clear any existing test status displays
         this.clearAllTestStatuses();
@@ -1461,6 +1475,77 @@ class WebRTCTroubleshooting {
             const pc = await this.sendClient._p2pChannel.connection.peerConnection;
             const stats = await pc.getStats();
             
+            // Collect all ICE candidates for logging
+            const allCandidates = [];
+            const allCandidatePairs = [];
+            
+            // Get all local candidates
+            const localCandidates = [...stats.values()].filter(r => r.type === 'local-candidate');
+            localCandidates.forEach(candidate => {
+                allCandidates.push({
+                    type: 'local',
+                    id: candidate.id,
+                    candidateType: candidate.candidateType,
+                    ip: candidate.ip || candidate.address,
+                    port: candidate.port,
+                    protocol: candidate.protocol,
+                    relayProtocol: candidate.relayProtocol,
+                    networkType: candidate.networkType,
+                    relatedAddress: candidate.relatedAddress,
+                    relatedPort: candidate.relatedPort,
+                    priority: candidate.priority,
+                    url: candidate.url
+                });
+            });
+            
+            // Get all remote candidates
+            const remoteCandidates = [...stats.values()].filter(r => r.type === 'remote-candidate');
+            remoteCandidates.forEach(candidate => {
+                allCandidates.push({
+                    type: 'remote',
+                    id: candidate.id,
+                    candidateType: candidate.candidateType,
+                    ip: candidate.ip || candidate.address,
+                    port: candidate.port,
+                    protocol: candidate.protocol,
+                    relayProtocol: candidate.relayProtocol,
+                    networkType: candidate.networkType,
+                    priority: candidate.priority,
+                    url: candidate.url
+                });
+            });
+            
+            // Get all candidate pairs
+            const candidatePairs = [...stats.values()].filter(r => r.type === 'candidate-pair');
+            candidatePairs.forEach(pair => {
+                allCandidatePairs.push({
+                    id: pair.id,
+                    localCandidateId: pair.localCandidateId,
+                    remoteCandidateId: pair.remoteCandidateId,
+                    state: pair.state,
+                    nominated: pair.nominated,
+                    selected: pair.selected,
+                    priority: pair.priority,
+                    availableOutgoingBitrate: pair.availableOutgoingBitrate,
+                    availableIncomingBitrate: pair.availableIncomingBitrate,
+                    bytesReceived: pair.bytesReceived,
+                    bytesSent: pair.bytesSent,
+                    packetsReceived: pair.packetsReceived,
+                    packetsSent: pair.packetsSent,
+                    totalRoundTripTime: pair.totalRoundTripTime,
+                    currentRoundTripTime: pair.currentRoundTripTime
+                });
+            });
+            
+            // Store all candidates for logging
+            this.allIceCandidates = {
+                candidates: allCandidates,
+                candidatePairs: allCandidatePairs,
+                iceConnectionState: pc.iceConnectionState,
+                iceGatheringState: pc.iceGatheringState,
+                connectionState: pc.connectionState
+            };
+            
             // Find transport stats
             const transport = [...stats.values()].find(r => r.type === 'transport' || r.type === 'ice-transport');
             const pair = transport?.selectedCandidatePairId
@@ -1482,7 +1567,8 @@ class WebRTCTroubleshooting {
                     iceConnectionState: pc.iceConnectionState,
                     selectedPair: null,
                     localCandidate: null,
-                    pathSummary: null
+                    pathSummary: null,
+                    allCandidates: this.allIceCandidates
                 };
             }
             
@@ -1500,7 +1586,7 @@ class WebRTCTroubleshooting {
             const candTypeRemote = remote?.candidateType;
             const remotePort = remote?.port;
             console.log(`Remote candidate path: ${protoRemote}/${candTypeRemote} => ${remoteIP}:${remotePort}`);
-    
+
             const pathSummary = `${local.relatedAddress}:${local.relatedPort} => ${localIP}:${local.port} => protocol=${proto}/${candType} => ${remoteIP}:${remotePort}/${candTypeRemote}`;
             console.log(`Path summary → ${pathSummary}`);
             
@@ -1520,6 +1606,7 @@ class WebRTCTroubleshooting {
                 remoteCandidate: candTypeRemote,
                 protocolRemote: protoRemote,
                 pathSummary: pathSummary,
+                allCandidates: this.allIceCandidates
             };
             
         } catch (error) {
@@ -1530,7 +1617,8 @@ class WebRTCTroubleshooting {
                 selectedPair: null,
                 localCandidate: null,
                 remoteCandidate: null,
-                pathSummary: null
+                pathSummary: null,
+                allCandidates: this.allIceCandidates
             };
         }
     }
@@ -1971,6 +2059,10 @@ class WebRTCTroubleshooting {
             // Include browser and SDK info (no duplicates since testResults.browser.details has more info)
             browser: navigator.userAgent,
             sdkVersion: AgoraRTC.VERSION,
+            // Include all ICE candidates collected during the test
+            iceCandidates: this.allIceCandidates,
+            // Include all available devices
+            availableDevices: this.availableDevices,
             // Include any live test data if available
             liveTestData: this.liveSendClient ? {
                 hasLiveTest: true,
@@ -2148,6 +2240,22 @@ class WebRTCTroubleshooting {
             // Filter cameras and microphones
             const cameras = devices.filter(device => device.kind === 'videoinput');
             const microphones = devices.filter(device => device.kind === 'audioinput');
+            
+            // Store all devices for logging
+            this.availableDevices = {
+                cameras: cameras.map(camera => ({
+                    deviceId: camera.deviceId,
+                    label: camera.label || 'Unknown Camera',
+                    kind: camera.kind,
+                    groupId: camera.groupId
+                })),
+                microphones: microphones.map(microphone => ({
+                    deviceId: microphone.deviceId,
+                    label: microphone.label || 'Unknown Microphone',
+                    kind: microphone.kind,
+                    groupId: microphone.groupId
+                }))
+            };
             
             // Populate camera dropdown
             const cameraSelect = document.getElementById('cameraSelect');
