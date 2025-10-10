@@ -13,6 +13,11 @@ class WebRTCTroubleshooting {
         this.isTesting = false;
         this.language = 'en';
         
+        // Test sequence management
+        this.testSequenceRunning = false;
+        this.currentTestAbortController = null;
+        this.testSequenceAbortController = null;
+        
         // Agora clients
         this.sendClient = null;
         this.recvClient = null;
@@ -204,6 +209,12 @@ class WebRTCTroubleshooting {
     }
     
     async startTest() {
+        // Prevent multiple test sequences from running
+        if (this.testSequenceRunning) {
+            console.log('Test sequence already running, ignoring start request');
+            return;
+        }
+        
         this.appId = document.getElementById('appId').value;
         this.token = document.getElementById('token').value || null;
         this.receivingToken = document.getElementById('receivingToken').value || null;
@@ -217,10 +228,14 @@ class WebRTCTroubleshooting {
         }
         
         this.isTesting = true;
+        this.testSequenceRunning = true;
         this.currentStep = 0;
         this.resetTestResults();
         this.skippedTests.clear();
         this.runningTests = new Set(); // Track which tests are currently running
+        
+        // Create abort controller for the test sequence
+        this.testSequenceAbortController = new AbortController();
         
         // Enumerate available devices for logging
         try {
@@ -254,42 +269,65 @@ class WebRTCTroubleshooting {
     async runTestSequence(startIndex = 0) {
         const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
 
-        for (let i = startIndex; i < testNames.length; i++) {
-            const testName = testNames[i];
-
-            if (this.skippedTests.has(testName)) {
-                console.log(`${testName} test was skipped, moving to next`);
-                continue;
-            }
-
-            this.updateStep(i);
-
-            try {
-                switch (testName) {
-                    case 'browser':
-                        await this.runBrowserCheck();
-                        break;
-                    case 'microphone':
-                        await this.runMicrophoneCheck();
-                        break;
-                    case 'speaker':
-                        await this.runSpeakerCheck();
-                        break;
-                    case 'resolution':
-                        await this.runResolutionCheck();
-                        break;
-                    case 'network':
-                        await this.runNetworkCheck();
-                        break;
+        try {
+            for (let i = startIndex; i < testNames.length; i++) {
+                // Check if the test sequence was aborted
+                if (this.testSequenceAbortController?.signal.aborted) {
+                    console.log('Test sequence aborted');
+                    return;
                 }
-            } catch (err) {
-                console.error(`Test ${testName} failed:`, err);
-                // Don't stop the sequence
-            }
-        }
 
-        // Always show test report at the end
-        this.showTestReport();
+                const testName = testNames[i];
+
+                if (this.skippedTests.has(testName)) {
+                    console.log(`${testName} test was skipped, moving to next`);
+                    continue;
+                }
+
+                // Update UI to show current step
+                this.updateStep(i);
+
+                try {
+                    // Create abort controller for current test
+                    this.currentTestAbortController = new AbortController();
+                    
+                    // Run the test with cancellation support
+                    switch (testName) {
+                        case 'browser':
+                            await this.runBrowserCheck();
+                            break;
+                        case 'microphone':
+                            await this.runMicrophoneCheck();
+                            break;
+                        case 'speaker':
+                            await this.runSpeakerCheck();
+                            break;
+                        case 'resolution':
+                            await this.runResolutionCheck();
+                            break;
+                        case 'network':
+                            await this.runNetworkCheck();
+                            break;
+                    }
+                } catch (err) {
+                    // Check if it was cancelled due to skip
+                    if (err.message === 'Delay cancelled' || err.message === 'Test cancelled') {
+                        console.log(`${testName} test was cancelled/skipped`);
+                        continue;
+                    }
+                    console.error(`Test ${testName} failed:`, err);
+                    // Don't stop the sequence, continue to next test
+                } finally {
+                    // Clear the current test abort controller
+                    this.currentTestAbortController = null;
+                }
+            }
+        } finally {
+            // Always show test report at the end
+            this.testSequenceRunning = false;
+            this.testSequenceAbortController = null;
+            this.showTestReport();
+        }
     }
     
     resetTestResults() {
@@ -367,7 +405,7 @@ class WebRTCTroubleshooting {
             }
             
             // Show browser info for 4 seconds before moving on
-            await this.delay(4000);
+            await this.delay(4000, this.currentTestAbortController);
         } catch (error) {
             // Check if test was skipped before setting results
             if (this.skippedTests.has('browser')) {
@@ -925,7 +963,7 @@ class WebRTCTroubleshooting {
                     ]);
                     
                     // Additional wait to ensure video is fully rendered
-                    await this.delay(500);
+                    await this.delay(500, this.currentTestAbortController);
                     
                     // Check if video is displaying correctly
                     const videoElement = document.querySelector('#test-send video');
@@ -962,7 +1000,7 @@ class WebRTCTroubleshooting {
                 this.updateResolutionList(results);
                 
                 // Longer delay between tests - 3 seconds
-                await this.delay(1000);
+                await this.delay(1000, this.currentTestAbortController);
             }
             
             // Clear the flag
@@ -980,7 +1018,7 @@ class WebRTCTroubleshooting {
                 results: results
             };
 
-            await this.delay(5000);
+            await this.delay(5000, this.currentTestAbortController);
             
         } catch (error) {
             this.isResolutionTesting = false;
@@ -997,7 +1035,6 @@ class WebRTCTroubleshooting {
             };
             this.updateStepResult('resolutionResult', `❌ Resolution test failed: ${error.message}`, 'error');
             throw error;
-            await this.delay(5000);
         }
     }
     
@@ -2164,10 +2201,21 @@ class WebRTCTroubleshooting {
     
     resetTest() {
         this.isTesting = false;
+        this.testSequenceRunning = false;
         this.currentStep = 0;
         this.resetTestResults();
         this.skippedTests.clear();
         this.runningTests.clear();
+        
+        // Cancel any ongoing operations
+        if (this.currentTestAbortController) {
+            this.currentTestAbortController.abort();
+            this.currentTestAbortController = null;
+        }
+        if (this.testSequenceAbortController) {
+            this.testSequenceAbortController.abort();
+            this.testSequenceAbortController = null;
+        }
         
         // Hide all skip buttons
         this.hideAllSkipButtons();
@@ -2658,8 +2706,17 @@ class WebRTCTroubleshooting {
         }
     }
 
-    delay(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
+    delay(ms, abortController = null) {
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(resolve, ms);
+            
+            if (abortController) {
+                abortController.signal.addEventListener('abort', () => {
+                    clearTimeout(timeoutId);
+                    reject(new Error('Delay cancelled'));
+                });
+            }
+        });
     }
     
     skipTest(testName) {
@@ -2672,15 +2729,29 @@ class WebRTCTroubleshooting {
             message: 'Test skipped by user'
         };
 
-        // Move immediately to the next step in the UI
-        const testOrder = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
-        const currentIndex = testOrder.indexOf(testName);
-        if (currentIndex >= 0 && currentIndex + 1 < testOrder.length) {
-            this.updateStep(currentIndex + 1);
+        // Cancel the current test if it's running
+        if (this.currentTestAbortController) {
+            this.currentTestAbortController.abort();
         }
 
-        // Auto-start the next test in the sequence
-        this.runTestSequence(currentIndex + 1);
+        // Find the next test to run
+        const testOrder = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
+        const currentIndex = testOrder.indexOf(testName);
+        const nextIndex = currentIndex + 1;
+
+        // If there are more tests, continue the sequence
+        if (nextIndex < testOrder.length) {
+            // Update UI to show next step
+            this.updateStep(nextIndex);
+            
+            // Continue the test sequence from the next test
+            // This will be handled by the main loop in runTestSequence
+        } else {
+            // No more tests, show the report
+            this.testSequenceRunning = false;
+            this.testSequenceAbortController = null;
+            this.showTestReport();
+        }
     }
     
     
