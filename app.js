@@ -37,15 +37,15 @@ class WebRTCTroubleshooting {
         // Skip functionality
         this.skippedTests = new Set();
         
-        // Test profiles for resolution check
+        // Test profiles for resolution check (reversed order - start with highest resolution)
         this.testProfiles = [
-            { resolution: '120p_1', width: 160, height: 120 },
-            { resolution: '180p_1', width: 320, height: 180 },
-            { resolution: '240p_1', width: 320, height: 240 },
-            { resolution: '360p_1', width: 640, height: 360 },
-            { resolution: '480p_1', width: 640, height: 480 },
+            { resolution: '1080p_1', width: 1920, height: 1080 },
             { resolution: '720p_1', width: 1280, height: 720 },
-            { resolution: '1080p_1', width: 1920, height: 1080 }
+            { resolution: '480p_1', width: 640, height: 480 },
+            { resolution: '360p_1', width: 640, height: 360 },
+            { resolution: '240p_1', width: 320, height: 240 },
+            { resolution: '180p_1', width: 320, height: 180 },
+            { resolution: '120p_1', width: 160, height: 120 }
         ];
         
         // Chart data
@@ -237,12 +237,8 @@ class WebRTCTroubleshooting {
         // Create abort controller for the test sequence
         this.testSequenceAbortController = new AbortController();
         
-        // Enumerate available devices for logging
-        try {
-            await this.enumerateDevices();
-        } catch (error) {
-            console.warn('Could not enumerate devices for logging:', error);
-        }
+        // Skip device enumeration at start to avoid triggering camera activation
+        // Devices will be enumerated only when user opens device selection modal
         
         // Clear any existing test status displays
         this.clearAllTestStatuses();
@@ -881,6 +877,34 @@ class WebRTCTroubleshooting {
         this.updateStep(3);
         this.showMessage('Testing video resolutions...', 'info');
         
+        // Explicitly clean up any existing camera resources before starting
+        console.log('Cleaning up any existing camera resources before resolution test...');
+        if (this.localVideoTrack) {
+            console.log('Closing existing video track');
+            await this.localVideoTrack.close();
+            this.localVideoTrack = null;
+        }
+        
+        // Clear any video elements that might be holding camera resources
+        const testVideoElement = document.querySelector('#test-send video');
+        if (testVideoElement) {
+            console.log('Clearing video element srcObject');
+            testVideoElement.srcObject = null;
+        }
+        
+        // Also clean up any audio tracks that might be holding camera resources
+        if (this.localAudioTrack) {
+            console.log('Closing audio track to release all media resources');
+            await this.localAudioTrack.close();
+            this.localAudioTrack = null;
+        }
+        
+        // Force garbage collection and wait a bit for resources to be released
+        if (window.gc) {
+            window.gc();
+        }
+        await this.delay(750); // Delay to ensure camera is fully released
+        
         const resolutionList = document.getElementById('resolutionList');
         if (resolutionList) {
             resolutionList.innerHTML = '<div class="loading">🔄 Testing resolutions...</div>';
@@ -904,6 +928,24 @@ class WebRTCTroubleshooting {
                     console.log('Resolution test was skipped during loop, stopping');
                     break;
                 }
+                
+                // Add delay before each test (except the first one)
+                if (i > 0) {
+                    const delayStartTime = Date.now();
+                    console.log(`Waiting 750ms before next test... (${delayStartTime})`);
+                    console.log(`Abort controller state:`, this.currentTestAbortController?.signal.aborted);
+                    
+                    // Check if abort controller is still valid before using it
+                    if (this.currentTestAbortController && !this.currentTestAbortController.signal.aborted) {
+                        await this.delay(750, this.currentTestAbortController);
+                    } else {
+                        console.log(`Abort controller invalid, using simple delay`);
+                        await this.delay(750);
+                    }
+                    const delayEndTime = Date.now();
+                    console.log(`Delay complete, starting next test (took ${delayEndTime - delayStartTime}ms)`);
+                }
+                
                 const profile = this.testProfiles[i];
                 console.log(`Testing resolution: ${profile.resolution} (${profile.width}x${profile.height})`);
                 
@@ -935,20 +977,27 @@ class WebRTCTroubleshooting {
                 
                 try {
                     // Create video track with specific resolution
+                    console.log(`Creating video track with encoderConfig: ${profile.resolution}`);
+                    console.log(`Expected resolution: ${profile.width}x${profile.height}`);
                     const videoTrack = await AgoraRTC.createCameraVideoTrack(
                         { encoderConfig: profile.resolution }
                     );
+                    console.log(`Video track created successfully for ${profile.resolution}`);
                     
                     // Play video to test resolution
+                    console.log(`Playing video track for ${profile.resolution}`);
                     videoTrack.play('test-send');
                     
                     // Wait for video to load with proper timeout
+                    console.log(`Waiting for video to load for ${profile.resolution}...`);
                     await Promise.race([
                         this.delay(200), // 5 second timeout
                         new Promise((resolve) => {
                             const checkVideo = () => {
                                 const videoElement = document.querySelector('#test-send video');
+                                console.log(`Checking video element for ${profile.resolution}:`, videoElement ? `${videoElement.videoWidth}x${videoElement.videoHeight}` : 'not found');
                                 if (videoElement && videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+                                    console.log(`Video loaded for ${profile.resolution}: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
                                     if (this.micResolve && typeof this.micResolve === 'function') {
                                         if (this.micResolve && typeof this.micResolve === 'function') {
                                     this.micResolve();
@@ -967,6 +1016,13 @@ class WebRTCTroubleshooting {
                     
                     // Check if video is displaying correctly
                     const videoElement = document.querySelector('#test-send video');
+                    console.log(`Video element found:`, !!videoElement);
+                    if (videoElement) {
+                        console.log(`Video element dimensions: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+                        console.log(`Video element readyState:`, videoElement.readyState);
+                        console.log(`Video element srcObject:`, !!videoElement.srcObject);
+                    }
+                    
                     if (videoElement && videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
                         const actualWidth = videoElement.videoWidth;
                         const actualHeight = videoElement.videoHeight;
@@ -989,13 +1045,23 @@ class WebRTCTroubleshooting {
                     }
                     
                     // Clean up
+                    console.log(`Closing video track for ${profile.resolution}`);
                     videoTrack.close();
                     
                     // Clear the video element to ensure clean state for next test
                     const testVideoElement = document.querySelector('#test-send video');
                     if (testVideoElement) {
+                        console.log(`Clearing video element srcObject`);
                         testVideoElement.srcObject = null;
                     }
+                    
+                    // Force garbage collection to release camera resources
+                    if (window.gc) {
+                        window.gc();
+                    }
+                    
+                    // Wait a bit for resources to be fully released
+                    await this.delay(500);
                     
                 } catch (error) {
                     console.error(`Resolution test failed for ${profile.resolution}:`, error);
@@ -1004,9 +1070,6 @@ class WebRTCTroubleshooting {
                 
                 // Update UI with current results
                 this.updateResolutionList(results);
-                
-                // Longer delay between tests to allow camera resources to be fully released
-                await this.delay(2000, this.currentTestAbortController);
             }
             
             // Clear the flag
