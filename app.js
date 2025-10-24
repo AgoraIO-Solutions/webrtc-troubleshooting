@@ -44,8 +44,8 @@ class WebRTCTroubleshooting {
             { resolution: '240p_1', width: 320, height: 240 },
             { resolution: '360p_1', width: 640, height: 360 },
             { resolution: '480p_1', width: 640, height: 480 },
-            { resolution: '720p_1', width: 1280, height: 720 },
-            { resolution: '1080p_1', width: 1920, height: 1080 }
+            { resolution: '720p_3', width: 1280, height: 720 },
+            { resolution: '1080p_3', width: 1920, height: 1080 }
         ];
         
         // Chart data
@@ -1192,7 +1192,7 @@ class WebRTCTroubleshooting {
         // Create tracks
         [this.audioTrack, this.videoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks(
             {},
-            { encoderConfig: '720p_2' }
+            { encoderConfig: '720p_3' }
         );
         
         // Join channels
@@ -2465,7 +2465,7 @@ class WebRTCTroubleshooting {
                 { microphoneId: this.selectedMicrophoneId },
                 { 
                     cameraId: this.selectedCameraId,
-                    encoderConfig: '720p_2' 
+                    encoderConfig: '720p_3' 
                 }
             );
             
