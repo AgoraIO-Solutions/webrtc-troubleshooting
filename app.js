@@ -44,8 +44,8 @@ class WebRTCTroubleshooting {
             { resolution: '240p_1', width: 320, height: 240 },
             { resolution: '360p_1', width: 640, height: 360 },
             { resolution: '480p_1', width: 640, height: 480 },
-            { resolution: '720p_3', width: 1280, height: 720 },
-            { resolution: '1080p_3', width: 1920, height: 1080 }
+            { resolution: '720p_1', width: 1280, height: 720 },
+            { resolution: '1080p_1', width: 1920, height: 1080 }
         ];
         
         // Chart data
@@ -991,6 +991,12 @@ class WebRTCTroubleshooting {
                     // Clean up
                     videoTrack.close();
                     
+                    // Clear the video element to ensure clean state for next test
+                    const testVideoElement = document.querySelector('#test-send video');
+                    if (testVideoElement) {
+                        testVideoElement.srcObject = null;
+                    }
+                    
                 } catch (error) {
                     console.error(`Resolution test failed for ${profile.resolution}:`, error);
                     results.push({ ...profile, status: 'error', error: error.message });
@@ -999,8 +1005,8 @@ class WebRTCTroubleshooting {
                 // Update UI with current results
                 this.updateResolutionList(results);
                 
-                // Longer delay between tests - 3 seconds
-                await this.delay(1000, this.currentTestAbortController);
+                // Longer delay between tests to allow camera resources to be fully released
+                await this.delay(2000, this.currentTestAbortController);
             }
             
             // Clear the flag
@@ -1192,7 +1198,7 @@ class WebRTCTroubleshooting {
         // Create tracks
         [this.audioTrack, this.videoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks(
             {},
-            { encoderConfig: '720p_3' }
+            { encoderConfig: '720p_2' }
         );
         
         // Join channels
@@ -2465,7 +2471,7 @@ class WebRTCTroubleshooting {
                 { microphoneId: this.selectedMicrophoneId },
                 { 
                     cameraId: this.selectedCameraId,
-                    encoderConfig: '720p_3' 
+                    encoderConfig: '720p_2' 
                 }
             );
             
