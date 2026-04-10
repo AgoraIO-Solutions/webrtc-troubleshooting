@@ -30,8 +30,8 @@ A browser-based tool to exercise and debug [Agora Web SDK](https://docs.agora.io
 ## Quick start (`master`)
 
 ```bash
-git clone https://github.com/AgoraIO-Solutions/webrtc-troubleshooting-demo.git
-cd webrtc-troubleshooting-demo
+git clone https://github.com/AgoraIO-Solutions/webrtc-troubleshooting.git
+cd webrtc-troubleshooting
 npm install
 cp .env.example .env
 # Edit .env: set AGORA_APP_ID (required for a useful demo); optionally AGORA_APP_CERTIFICATE
