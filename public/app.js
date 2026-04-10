@@ -12,7 +12,9 @@ class WebRTCTroubleshooting {
         this.currentStep = 0;
         this.isTesting = false;
         this.language = 'en';
-        
+        this.tokenServiceEnabled = false;
+        this.serverAppId = '';
+
         // Test sequence management
         this.testSequenceRunning = false;
         this.currentTestAbortController = null;
@@ -72,8 +74,102 @@ class WebRTCTroubleshooting {
         this.setupCharts();
         this.enableAgoraLogging();
         this.hideAllSkipButtons();
+        void this.loadServerConfig();
     }
-    
+
+    async loadServerConfig() {
+        try {
+            const res = await fetch('/api/config');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            this.serverAppId = (data.appId || '').trim();
+            this.tokenServiceEnabled = Boolean(data.tokenServiceEnabled);
+        } catch (e) {
+            this.serverAppId = '';
+            this.tokenServiceEnabled = false;
+        }
+    }
+
+    async requestRtcTokensFromServer(channelName, sendUid, recvUid) {
+        const body = {
+            channelName,
+            tokenExpireSeconds: 3600,
+            privilegeExpireSeconds: 3600,
+        };
+        if (sendUid != null && recvUid != null) {
+            body.sendUid = sendUid;
+            body.recvUid = recvUid;
+        }
+        const res = await fetch('/api/rtc-tokens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(data.error || `Token request failed (${res.status})`);
+        }
+        return data;
+    }
+
+    async prepareRtcCredentialsForChannel(channelName) {
+        if (!this.tokenServiceEnabled) {
+            this.token = null;
+            this.receivingToken = null;
+            this.userId = null;
+            this.receivingUserId = null;
+            return;
+        }
+        const data = await this.requestRtcTokensFromServer(channelName);
+        this.token = data.sendingToken;
+        this.receivingToken = data.receivingToken;
+        this.userId = data.sendUid;
+        this.receivingUserId = data.recvUid;
+        if (data.appId) {
+            this.appId = data.appId;
+            this.serverAppId = data.appId;
+        }
+    }
+
+    /**
+     * Agora exposes loss as a short-window rate and/or cumulative packet counts.
+     * Never treat sendPacketsLost / receivePacketsLost as a percentage.
+     */
+    normalizePacketLossRateToPercent(rate) {
+        if (rate == null || !Number.isFinite(rate) || rate < 0) return 0;
+        if (rate <= 1) return Math.min(100, rate * 100);
+        return Math.min(100, rate);
+    }
+
+    packetLossPercentFromLocalTrack(stats) {
+        if (!stats || typeof stats !== 'object') return 0;
+        if (stats.currentPacketLossRate != null && Number.isFinite(stats.currentPacketLossRate)) {
+            return this.normalizePacketLossRateToPercent(stats.currentPacketLossRate);
+        }
+        const lost = Number(stats.sendPacketsLost);
+        const sent = Number(stats.sendPackets);
+        if (Number.isFinite(lost) && Number.isFinite(sent) && lost + sent > 0) {
+            return Math.min(100, (lost / (lost + sent)) * 100);
+        }
+        return 0;
+    }
+
+    packetLossPercentFromRemoteTrack(stats) {
+        if (!stats || typeof stats !== 'object') return 0;
+        if (stats.currentPacketLossRate != null && Number.isFinite(stats.currentPacketLossRate)) {
+            return this.normalizePacketLossRateToPercent(stats.currentPacketLossRate);
+        }
+        if (stats.packetLossRate != null && Number.isFinite(stats.packetLossRate)) {
+            return this.normalizePacketLossRateToPercent(stats.packetLossRate);
+        }
+        const lost = Number(stats.receivePacketsLost);
+        const recv = Number(stats.receivePackets);
+        if (Number.isFinite(lost) && Number.isFinite(recv) && lost + recv > 0) {
+            return Math.min(100, (lost / (lost + recv)) * 100);
+        }
+        return 0;
+    }
+
     setupCharts() {
         // Initialize Google Charts when the library is loaded
         if (typeof google !== 'undefined') {
@@ -120,7 +216,10 @@ class WebRTCTroubleshooting {
     
     setupEventListeners() {
         // Start test button
-        document.getElementById('startBtn').addEventListener('click', () => this.startTest());
+        const startTest = () => this.startTest();
+        document.getElementById('startBtn').addEventListener('click', startTest);
+        const startBtnMain = document.getElementById('startBtnMain');
+        if (startBtnMain) startBtnMain.addEventListener('click', startTest);
         
         // Language toggle - removed (element not present in HTML)
         
@@ -161,7 +260,7 @@ class WebRTCTroubleshooting {
         // Seeing is believing controls
         document.getElementById('startLiveTestBtn').addEventListener('click', () => this.showDeviceSelection());
         document.getElementById('stopLiveTestBtn').addEventListener('click', () => this.stopLiveTest());
-        
+
         // Skip test buttons
         document.getElementById('skipBrowserBtn').addEventListener('click', () => this.skipTest('browser'));
         document.getElementById('skipMicBtn').addEventListener('click', () => this.skipTest('microphone'));
@@ -174,7 +273,6 @@ class WebRTCTroubleshooting {
         const timestamp = Date.now();
         const random = Math.floor(Math.random() * 1000000);
         this.channel = `test_${timestamp}_${random}`;
-        document.getElementById('channelName').value = this.channel;
     }
     
     setupCharts() {
@@ -214,19 +312,27 @@ class WebRTCTroubleshooting {
             console.log('Test sequence already running, ignoring start request');
             return;
         }
-        
-        this.appId = document.getElementById('appId').value;
-        this.token = document.getElementById('token').value || null;
-        this.receivingToken = document.getElementById('receivingToken').value || null;
-        this.channel = document.getElementById('channelName').value;
-        this.userId = document.getElementById('userId').value ? parseInt(document.getElementById('userId').value) : null;
-        this.receivingUserId = document.getElementById('receivingUserId').value ? parseInt(document.getElementById('receivingUserId').value) : null;
-        
-        if (!this.appId || !this.channel) {
-            this.showMessage('Please enter App ID and Channel Name', 'error');
+
+        await this.loadServerConfig();
+        if (!this.serverAppId) {
+            this.showMessage(
+                'App ID was not loaded. Run this app through the Node server (npm start) with AGORA_APP_ID set in the environment.',
+                'error'
+            );
             return;
         }
-        
+
+        this.generateChannelName();
+        this.appId = this.serverAppId;
+
+        try {
+            await this.prepareRtcCredentialsForChannel(this.channel);
+        } catch (err) {
+            console.error(err);
+            this.showMessage(`Could not get RTC tokens from server: ${err.message}`, 'error');
+            return;
+        }
+
         this.isTesting = true;
         this.testSequenceRunning = true;
         this.currentStep = 0;
@@ -1317,55 +1423,40 @@ class WebRTCTroubleshooting {
                 console.log('Network Test - Remote Video Stats:', remoteVideoStats);
                 console.log('Network Test - Remote Audio Stats:', remoteAudioStats);
                 
-                // Calculate all 4 bitrates
+                // Calculate all 4 bitrates (local maps are keyed by track ID)
                 const localVideoKeys = Object.keys(localVideoStats);
                 const localAudioKeys = Object.keys(localAudioStats);
                 const remoteVideoKeys = Object.keys(remoteVideoStats);
                 const remoteAudioKeys = Object.keys(remoteAudioStats);
-                
-                // Local video bitrate - read directly from the flat object
-                let localVideoBitrate = Number(localVideoStats?.sendBitrate || 0) * 0.001;
-                
-                // Local audio bitrate - read directly from the flat object
-                let localAudioBitrate = Number(localAudioStats?.sendBitrate || 0) * 0.001;
-                
-                // Remote video bitrate
+                const firstLocalVideo = localVideoKeys.length ? localVideoStats[localVideoKeys[0]] : null;
+                const firstLocalAudio = localAudioKeys.length ? localAudioStats[localAudioKeys[0]] : null;
+
+                let localVideoBitrate = Number(firstLocalVideo?.sendBitrate || 0) * 0.001;
+                let localAudioBitrate = Number(firstLocalAudio?.sendBitrate || 0) * 0.001;
+
                 let remoteVideoBitrate = 0;
                 if (remoteVideoKeys.length > 0) {
                     remoteVideoBitrate = Number(remoteVideoStats[remoteVideoKeys[0]]?.receiveBitrate || remoteVideoStats[remoteVideoKeys[0]]?.bitrate || 0) * 0.001;
                 }
-                
-                // Remote audio bitrate
+
                 let remoteAudioBitrate = 0;
                 if (remoteAudioKeys.length > 0) {
                     remoteAudioBitrate = Number(remoteAudioStats[remoteAudioKeys[0]]?.receiveBitrate || remoteAudioStats[remoteAudioKeys[0]]?.bitrate || 0) * 0.001;
                 }
-                
-                // Ensure we have valid numbers and handle edge cases
+
                 const validLocalVideoBitrate = isNaN(localVideoBitrate) || localVideoBitrate < 0 ? 0 : Math.max(0, localVideoBitrate);
                 const validLocalAudioBitrate = isNaN(localAudioBitrate) || localAudioBitrate < 0 ? 0 : Math.max(0, localAudioBitrate);
-                
-                // For remote data, if we don't have remote connections, use local data as fallback
-                // This ensures the charts show meaningful data even in test environments
-                let validRemoteVideoBitrate = isNaN(remoteVideoBitrate) || remoteVideoBitrate < 0 ? 0 : Math.max(0, remoteVideoBitrate);
-                let validRemoteAudioBitrate = isNaN(remoteAudioBitrate) || remoteAudioBitrate < 0 ? 0 : Math.max(0, remoteAudioBitrate);
-                
-                // If remote data is 0 but local data exists, use local data as fallback for testing
-                if (validRemoteVideoBitrate === 0 && validLocalVideoBitrate > 0) {
-                    validRemoteVideoBitrate = validLocalVideoBitrate * 0.8; // Slightly lower to simulate remote
-                }
-                if (validRemoteAudioBitrate === 0 && validLocalAudioBitrate > 0) {
-                    validRemoteAudioBitrate = validLocalAudioBitrate * 0.9; // Slightly lower to simulate remote
-                }
-                
-                // Calculate packet loss - both local and remote
-                const localVideoPacketLoss = Number(localVideoStats?.sendPacketsLost || localVideoStats?.currentPacketLossRate || 0);
-                const localAudioPacketLoss = Number(localAudioStats?.sendPacketsLost || localAudioStats?.currentPacketLossRate || 0);
-                
-                const remoteVideoPacketLoss = remoteVideoKeys.length > 0 ? 
-                    (remoteVideoStats[remoteVideoKeys[0]]?.receivePacketsLost || remoteVideoStats[remoteVideoKeys[0]]?.packetLossRate || 0) : 0;
-                const remoteAudioPacketLoss = remoteAudioKeys.length > 0 ? 
-                    (remoteAudioStats[remoteAudioKeys[0]]?.receivePacketsLost || remoteAudioStats[remoteAudioKeys[0]]?.packetLossRate || 0) : 0;
+                const validRemoteVideoBitrate = isNaN(remoteVideoBitrate) || remoteVideoBitrate < 0 ? 0 : Math.max(0, remoteVideoBitrate);
+                const validRemoteAudioBitrate = isNaN(remoteAudioBitrate) || remoteAudioBitrate < 0 ? 0 : Math.max(0, remoteAudioBitrate);
+
+                const localVideoPacketLoss = this.packetLossPercentFromLocalTrack(firstLocalVideo);
+                const localAudioPacketLoss = this.packetLossPercentFromLocalTrack(firstLocalAudio);
+                const remoteVideoPacketLoss = remoteVideoKeys.length
+                    ? this.packetLossPercentFromRemoteTrack(remoteVideoStats[remoteVideoKeys[0]])
+                    : 0;
+                const remoteAudioPacketLoss = remoteAudioKeys.length
+                    ? this.packetLossPercentFromRemoteTrack(remoteAudioStats[remoteAudioKeys[0]])
+                    : 0;
                 
                 const time = Date.now() - this.testStartTime;
                 
@@ -1483,7 +1574,7 @@ class WebRTCTroubleshooting {
                 const options = {
                     title: 'Packet Loss (%)',
                     hAxis: { title: 'Time (seconds)' },
-                    vAxis: { title: 'Packet Loss (%)' },
+                    vAxis: { title: 'Packet Loss (%)', minValue: 0, maxValue: 100 },
                     series: {
                         0: { color: '#1f77b4' }, // Local Video
                         1: { color: '#ff7f0e' }, // Local Audio
@@ -1517,21 +1608,37 @@ class WebRTCTroubleshooting {
             
             // Leave channels and close clients
             if (this.sendClient) {
+                const sendClient = this.sendClient;
+                this.sendClient = null;
                 try {
-                    await this.sendClient.leave();
+                    await sendClient.leave();
                 } catch (error) {
                     console.log('Error leaving send client:', error);
                 }
-                this.sendClient = null;
+                if (this.isCloudProxyEnabled) {
+                    try {
+                        await sendClient.stopProxyServer();
+                    } catch (e) {
+                        console.log('stopProxyServer send client:', e);
+                    }
+                }
             }
-            
+
             if (this.recvClient) {
+                const recvClient = this.recvClient;
+                this.recvClient = null;
                 try {
-                    await this.recvClient.leave();
+                    await recvClient.leave();
                 } catch (error) {
                     console.log('Error leaving recv client:', error);
                 }
-                this.recvClient = null;
+                if (this.isCloudProxyEnabled) {
+                    try {
+                        await recvClient.stopProxyServer();
+                    } catch (e) {
+                        console.log('stopProxyServer recv client:', e);
+                    }
+                }
             }
             
             console.log('Agora clients cleaned up successfully');
@@ -2315,6 +2422,7 @@ class WebRTCTroubleshooting {
             packetLoss: [['Time', 'Local Video Packet Loss', 'Local Audio Packet Loss', 'Remote Video Packet Loss', 'Remote Audio Packet Loss']]
         };
         
+        this.generateChannelName();
         this.showMessage('Test reset successfully', 'info');
     }
     
@@ -2514,7 +2622,14 @@ class WebRTCTroubleshooting {
     async startLiveTestWithDevices() {
         try {
             this.showMessage('Starting live test with selected devices...', 'info');
-            
+
+            await this.loadServerConfig();
+            if (!this.appId && !this.serverAppId) {
+                this.showMessage('App ID is missing. Complete a test run first or reload from the server.', 'error');
+                return;
+            }
+            const appId = this.appId || this.serverAppId;
+
             // Initialize live test clients
             this.liveSendClient = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
             this.liveRecvClient = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
@@ -2544,12 +2659,20 @@ class WebRTCTroubleshooting {
             // Play local video
             liveVideoTrack.play('localVideo');
             
-            // Join channels
+            // Join channels (tokens are channel-specific; use server tokens for *_live when available)
             const liveSendUid = Math.floor(Math.random() * 100000) + 300000;
             const liveRecvUid = Math.floor(Math.random() * 100000) + 400000;
-            
-            await this.liveSendClient.join(this.appId, this.channel + '_live', this.token, liveSendUid);
-            await this.liveRecvClient.join(this.appId, this.channel + '_live', this.receivingToken, liveRecvUid);
+            const liveChannel = this.channel + '_live';
+            let liveSendToken = this.token;
+            let liveRecvToken = this.receivingToken;
+            if (this.tokenServiceEnabled) {
+                const t = await this.requestRtcTokensFromServer(liveChannel, liveSendUid, liveRecvUid);
+                liveSendToken = t.sendingToken;
+                liveRecvToken = t.receivingToken;
+            }
+
+            await this.liveSendClient.join(appId, liveChannel, liveSendToken, liveSendUid);
+            await this.liveRecvClient.join(appId, liveChannel, liveRecvToken, liveRecvUid);
             
             // Publish tracks
             await this.liveSendClient.publish([liveAudioTrack, liveVideoTrack]);
@@ -2603,39 +2726,35 @@ class WebRTCTroubleshooting {
                 const localAudioKeys = Object.keys(localAudioStats);
                 const remoteVideoKeys = Object.keys(remoteVideoStats);
                 const remoteAudioKeys = Object.keys(remoteAudioStats);
-                
-                // Local video bitrate - read directly from the flat object
-                let localVideoBitrate = Number(localVideoStats?.sendBitrate || 0) * 0.001;
-                
-                // Local audio bitrate - read directly from the flat object
-                let localAudioBitrate = Number(localAudioStats?.sendBitrate || 0) * 0.001;
-                
-                // Remote video bitrate
+                const firstLocalVideo = localVideoKeys.length ? localVideoStats[localVideoKeys[0]] : null;
+                const firstLocalAudio = localAudioKeys.length ? localAudioStats[localAudioKeys[0]] : null;
+
+                let localVideoBitrate = Number(firstLocalVideo?.sendBitrate || 0) * 0.001;
+                let localAudioBitrate = Number(firstLocalAudio?.sendBitrate || 0) * 0.001;
+
                 let remoteVideoBitrate = 0;
                 if (remoteVideoKeys.length > 0) {
                     remoteVideoBitrate = Number(remoteVideoStats[remoteVideoKeys[0]]?.receiveBitrate || remoteVideoStats[remoteVideoKeys[0]]?.bitrate || 0) * 0.001;
                 }
-                
-                // Remote audio bitrate
+
                 let remoteAudioBitrate = 0;
                 if (remoteAudioKeys.length > 0) {
                     remoteAudioBitrate = Number(remoteAudioStats[remoteAudioKeys[0]]?.receiveBitrate || remoteAudioStats[remoteAudioKeys[0]]?.bitrate || 0) * 0.001;
                 }
-                
-                // Ensure we have valid numbers
+
                 const validLocalVideoBitrate = isNaN(localVideoBitrate) || localVideoBitrate < 0 ? 0 : Math.max(0, localVideoBitrate);
                 const validLocalAudioBitrate = isNaN(localAudioBitrate) || localAudioBitrate < 0 ? 0 : Math.max(0, localAudioBitrate);
                 const validRemoteVideoBitrate = isNaN(remoteVideoBitrate) || remoteVideoBitrate < 0 ? 0 : Math.max(0, remoteVideoBitrate);
                 const validRemoteAudioBitrate = isNaN(remoteAudioBitrate) || remoteAudioBitrate < 0 ? 0 : Math.max(0, remoteAudioBitrate);
-                
-                // Calculate packet loss - both local and remote
-                const localVideoPacketLoss = Number(localVideoStats?.sendPacketsLost || localVideoStats?.currentPacketLossRate || 0);
-                const localAudioPacketLoss = Number(localAudioStats?.sendPacketsLost || localAudioStats?.currentPacketLossRate || 0);
-                
-                const remoteVideoPacketLoss = remoteVideoKeys.length > 0 ? 
-                    (remoteVideoStats[remoteVideoKeys[0]]?.receivePacketsLost || remoteVideoStats[remoteVideoKeys[0]]?.packetLossRate || 0) : 0;
-                const remoteAudioPacketLoss = remoteAudioKeys.length > 0 ? 
-                    (remoteAudioStats[remoteAudioKeys[0]]?.receivePacketsLost || remoteAudioStats[remoteAudioKeys[0]]?.packetLossRate || 0) : 0;
+
+                const localVideoPacketLoss = this.packetLossPercentFromLocalTrack(firstLocalVideo);
+                const localAudioPacketLoss = this.packetLossPercentFromLocalTrack(firstLocalAudio);
+                const remoteVideoPacketLoss = remoteVideoKeys.length
+                    ? this.packetLossPercentFromRemoteTrack(remoteVideoStats[remoteVideoKeys[0]])
+                    : 0;
+                const remoteAudioPacketLoss = remoteAudioKeys.length
+                    ? this.packetLossPercentFromRemoteTrack(remoteAudioStats[remoteAudioKeys[0]])
+                    : 0;
                 
                 // Debug the calculated values
                 console.log(`Live stats - Local Video: ${validLocalVideoBitrate.toFixed(1)}kbps, Local Audio: ${validLocalAudioBitrate.toFixed(1)}kbps, Remote Video: ${validRemoteVideoBitrate.toFixed(1)}kbps, Remote Audio: ${validRemoteAudioBitrate.toFixed(1)}kbps, Local Video PL: ${localVideoPacketLoss.toFixed(1)}%, Local Audio PL: ${localAudioPacketLoss.toFixed(1)}%, Remote Video PL: ${remoteVideoPacketLoss.toFixed(1)}%, Remote Audio PL: ${remoteAudioPacketLoss.toFixed(1)}%`);
@@ -2708,14 +2827,37 @@ class WebRTCTroubleshooting {
                 this.liveVideoTrack = null;
             }
             
-            // Leave channels
             if (this.liveSendClient) {
-                await this.liveSendClient.leave();
+                const c = this.liveSendClient;
                 this.liveSendClient = null;
+                try {
+                    await c.leave();
+                } catch (e) {
+                    console.log('Error cleaning up live send client:', e);
+                }
+                if (this.isCloudProxyEnabled) {
+                    try {
+                        await c.stopProxyServer();
+                    } catch (e) {
+                        console.log('stopProxyServer live send:', e);
+                    }
+                }
             }
             if (this.liveRecvClient) {
-                await this.liveRecvClient.leave();
+                const c = this.liveRecvClient;
                 this.liveRecvClient = null;
+                try {
+                    await c.leave();
+                } catch (e) {
+                    console.log('Error cleaning up live recv client:', e);
+                }
+                if (this.isCloudProxyEnabled) {
+                    try {
+                        await c.stopProxyServer();
+                    } catch (e) {
+                        console.log('stopProxyServer live recv:', e);
+                    }
+                }
             }
             
             // Update UI

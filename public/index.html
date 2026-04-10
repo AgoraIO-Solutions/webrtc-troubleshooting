@@ -25,40 +25,13 @@
         </header>
 
         <main>
-            <!-- Test Configuration -->
             <div class="test-config" id="testConfig">
-                <h2>Test Configuration</h2>
-                <div class="config-grid">
-                    <div class="input-group">
-                        <label for="userId">Sending Client User ID (optional)</label>
-                        <input type="text" id="userId" placeholder="Enter sending client user ID">
-                    </div>
-                    <div class="input-group">
-                        <label for="token">Sending Client Token (optional)</label>
-                        <input type="text" id="token" placeholder="Enter sending client token" title="Be sure to input matching UIDs and tokens, or generate a token for UID 0 from the console or your server.">
-                    </div>
-                    <div class="input-group">
-                        <label for="receivingUserId">Receiving Client User ID (optional)</label>
-                        <input type="text" id="receivingUserId" placeholder="Enter receiving client user ID">
-                    </div>
-                    <div class="input-group">
-                        <label for="receivingToken">Receiving Client Token (optional)</label>
-                        <input type="text" id="receivingToken" placeholder="Enter receiving client token" title="Be sure to input matching UIDs and tokens, or generate a token for UID 0 from the console or your server.">
-                    </div>
-
-                    <div class="input-group">
-                        <label for="appId">App ID</label>
-                        <input type="text" id="appId" placeholder="Enter your App ID" value="">
-                    </div>
-                    <div class="input-group">
-                        <label for="channelName">Channel Name</label>
-                        <input type="text" id="channelName" placeholder="Enter channel name">
-                    </div>
+                <div class="test-config-start">
+                    <button type="button" id="startBtnMain" class="btn-primary btn-start-main">🚀 Start Test</button>
+                    <p class="test-config-lead">Same as the button in the header. Optional cloud proxy settings are below.</p>
                 </div>
-                
-                <!-- Cloud Proxy Settings -->
                 <div class="proxy-settings">
-                    <h3>Cloud Proxy Settings</h3>
+                    <h2>Cloud Proxy</h2>
                     <div class="proxy-toggle">
                         <label class="toggle-label">
                             <input type="checkbox" id="enableCloudProxy">

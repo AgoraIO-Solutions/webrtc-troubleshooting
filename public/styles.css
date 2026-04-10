@@ -159,6 +159,27 @@ header {
     font-size: 1.5rem;
 }
 
+.test-config-start {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 24px;
+}
+
+.test-config-lead {
+    margin: 0;
+    max-width: 42rem;
+    font-size: 0.95rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.btn-start-main {
+    padding: 14px 28px;
+    font-size: 1.05rem;
+}
+
 .config-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -170,6 +191,30 @@ header {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.token-server-row {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.token-service-status-muted {
+    flex: 1;
+    min-width: 200px;
+    margin: 0;
+    font-size: 0.9rem;
+    color: #64748b;
+}
+
+.token-service-status-ok {
+    color: #15803d;
+}
+
+.token-service-status-warn {
+    color: #b45309;
 }
 
 .input-group label {
@@ -202,6 +247,7 @@ header {
     border: 1px solid var(--border-color);
 }
 
+.proxy-settings h2,
 .proxy-settings h3 {
     color: var(--primary-color);
     margin-bottom: 15px;
