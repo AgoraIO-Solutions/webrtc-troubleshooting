@@ -26,6 +26,7 @@ class WebRTCTroubleshooting {
         this.audioTrack = null;
         this.videoTrack = null;
         this.localAudioTrack = null;
+        this.micVolumeInterval = null;
         
         // Test results
         this.testResults = {
@@ -606,6 +607,16 @@ class WebRTCTroubleshooting {
         
         try {
             this.localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+            if (this.skippedTests.has('microphone')) {
+                try {
+                    await this.localAudioTrack.close();
+                } catch (e) {
+                    console.log('Error closing mic after skip during create:', e);
+                }
+                this.localAudioTrack = null;
+                this.microphoneTestRunning = false;
+                return;
+            }
             
             // Show the volume meter with user controls
             const micResult = document.getElementById('micResult');
@@ -632,11 +643,11 @@ class WebRTCTroubleshooting {
             let maxVolume = 0;
             let testCompleted = false;
             
-            const volumeInterval = setInterval(() => {
+            this.micVolumeInterval = setInterval(() => {
                 // Check if audio track exists before calling getVolumeLevel
                 if (!this.localAudioTrack) {
                     console.log('Audio track not available, stopping volume monitoring');
-                    clearInterval(volumeInterval);
+                    this.clearMicVolumeMonitoring();
                     return;
                 }
                 
@@ -656,7 +667,12 @@ class WebRTCTroubleshooting {
                 if (volumeText) {
                     volumeText.textContent = `Current volume: ${Math.round(volumePercent)}% - Speak louder!`;
                 }
-            }, 100);
+                }, 100);
+            
+            if (this.skippedTests.has('microphone')) {
+                this.teardownMicrophoneSkip();
+                return;
+            }
             
             // Return a promise that resolves when user clicks a button
             return new Promise((resolve) => {
@@ -666,7 +682,7 @@ class WebRTCTroubleshooting {
                 this.micTimeout = setTimeout(() => {
                     if (!testCompleted) {
                         testCompleted = true;
-                        clearInterval(volumeInterval);
+                        this.clearMicVolumeMonitoring();
                         if (this.localAudioTrack) {
                             this.localAudioTrack.close();
                         }
@@ -674,6 +690,11 @@ class WebRTCTroubleshooting {
                         // Check if test was skipped before showing timeout message
                         if (this.skippedTests.has('microphone')) {
                             console.log('Microphone test was skipped, not showing timeout message');
+                            if (this.micResolve) {
+                                const r = this.micResolve;
+                                this.micResolve = null;
+                                r();
+                            }
                             return;
                         }
                         
@@ -699,7 +720,7 @@ class WebRTCTroubleshooting {
                             console.log('Microphone Complete clicked');
                             if (!testCompleted) {
                                 testCompleted = true;
-                                clearInterval(volumeInterval);
+                                this.clearMicVolumeMonitoring();
                                 if (this.micTimeout) {
                                     clearTimeout(this.micTimeout);
                                     this.micTimeout = null;
@@ -713,6 +734,12 @@ class WebRTCTroubleshooting {
                                     // Check if test was skipped before setting results
                                     if (this.skippedTests.has('microphone')) {
                                         console.log('Microphone test was skipped, not setting results');
+                                        if (this.micResolve) {
+                                            const r = this.micResolve;
+                                            this.micResolve = null;
+                                            r();
+                                        }
+                                        this.microphoneTestRunning = false;
                                         return;
                                     }
                                     
@@ -725,6 +752,12 @@ class WebRTCTroubleshooting {
                                     // Check if test was skipped before setting results
                                     if (this.skippedTests.has('microphone')) {
                                         console.log('Microphone test was skipped, not setting results');
+                                        if (this.micResolve) {
+                                            const r = this.micResolve;
+                                            this.micResolve = null;
+                                            r();
+                                        }
+                                        this.microphoneTestRunning = false;
                                         return;
                                     }
                                     
@@ -750,7 +783,7 @@ class WebRTCTroubleshooting {
                             console.log('Microphone Failed clicked');
                             if (!testCompleted) {
                                 testCompleted = true;
-                                clearInterval(volumeInterval);
+                                this.clearMicVolumeMonitoring();
                                 if (this.micTimeout) {
                                     clearTimeout(this.micTimeout);
                                     this.micTimeout = null;
@@ -760,6 +793,12 @@ class WebRTCTroubleshooting {
                                 // Check if test was skipped before setting results
                                 if (this.skippedTests.has('microphone')) {
                                     console.log('Microphone test was skipped, not setting results');
+                                    if (this.micResolve) {
+                                        const r = this.micResolve;
+                                        this.micResolve = null;
+                                        r();
+                                    }
+                                    this.microphoneTestRunning = false;
                                     return;
                                 }
                                 
@@ -831,6 +870,11 @@ class WebRTCTroubleshooting {
                 // Check if test was skipped before showing timeout message
                 if (this.skippedTests.has('speaker')) {
                     console.log('Speaker test was skipped, not showing timeout message');
+                    if (this.speakerResolve) {
+                        const r = this.speakerResolve;
+                        this.speakerResolve = null;
+                        r();
+                    }
                     return;
                 }
                 
@@ -950,6 +994,11 @@ class WebRTCTroubleshooting {
         // Check if test was skipped before setting results
         if (this.skippedTests.has('speaker')) {
             console.log('Speaker test was skipped, not setting results');
+            if (this.speakerResolve) {
+                const r = this.speakerResolve;
+                this.speakerResolve = null;
+                r();
+            }
             return;
         }
         
@@ -1097,18 +1146,18 @@ class WebRTCTroubleshooting {
                     // Wait for video to load with proper timeout
                     console.log(`Waiting for video to load for ${profile.resolution}...`);
                     await Promise.race([
-                        this.delay(200), // 5 second timeout
+                        this.delay(5000, this.currentTestAbortController),
                         new Promise((resolve) => {
                             const checkVideo = () => {
+                                if (this.skippedTests.has('resolution') || !this.isResolutionTesting) {
+                                    resolve();
+                                    return;
+                                }
                                 const videoElement = document.querySelector('#test-send video');
                                 console.log(`Checking video element for ${profile.resolution}:`, videoElement ? `${videoElement.videoWidth}x${videoElement.videoHeight}` : 'not found');
                                 if (videoElement && videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
                                     console.log(`Video loaded for ${profile.resolution}: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
-                                    if (this.micResolve && typeof this.micResolve === 'function') {
-                                        if (this.micResolve && typeof this.micResolve === 'function') {
-                                    this.micResolve();
-                                }
-                                    }
+                                    resolve();
                                 } else {
                                     setTimeout(checkVideo, 200);
                                 }
@@ -1272,6 +1321,13 @@ class WebRTCTroubleshooting {
                 // The timeout is already set in startNetworkMonitoring
             });
             console.log('Network monitoring completed');
+            
+            if (this.skippedTests.has('network')) {
+                console.log('Network test skipped or ended early; skipping analysis');
+                this.stopNetworkMonitoring();
+                await this.cleanupAgoraClients();
+                return;
+            }
             
             // Analyze candidate pairs
             const candidatePairData = await this.analyzeCandidatePairs();
@@ -2930,6 +2986,69 @@ class WebRTCTroubleshooting {
         });
     }
     
+    clearMicVolumeMonitoring() {
+        if (this.micVolumeInterval) {
+            clearInterval(this.micVolumeInterval);
+            this.micVolumeInterval = null;
+        }
+    }
+    
+    teardownMicrophoneSkip() {
+        this.clearMicVolumeMonitoring();
+        if (this.micTimeout) {
+            clearTimeout(this.micTimeout);
+            this.micTimeout = null;
+        }
+        if (this.localAudioTrack) {
+            try {
+                this.localAudioTrack.close();
+            } catch (e) {
+                console.log('Error closing microphone track on skip:', e);
+            }
+            this.localAudioTrack = null;
+        }
+        this.microphoneTestRunning = false;
+        if (this.micResolve) {
+            const r = this.micResolve;
+            this.micResolve = null;
+            r();
+        }
+    }
+    
+    teardownSpeakerSkip() {
+        if (this.speakerTimeout) {
+            clearTimeout(this.speakerTimeout);
+            this.speakerTimeout = null;
+        }
+        if (this.audioContext) {
+            try {
+                this.audioContext.close();
+            } catch (e) {
+                console.log('Error closing audio context on skip:', e);
+            }
+            this.audioContext = null;
+        }
+        if (this.speakerResolve) {
+            const r = this.speakerResolve;
+            this.speakerResolve = null;
+            r();
+        }
+    }
+    
+    async finalizeNetworkSkipFromUser() {
+        this.stopNetworkMonitoring();
+        try {
+            await this.cleanupAgoraClients();
+        } catch (e) {
+            console.log('Network skip cleanup:', e);
+        }
+        if (this.networkResolve) {
+            const r = this.networkResolve;
+            this.networkResolve = null;
+            r();
+        }
+    }
+    
     skipTest(testName) {
         console.log(`Skipping ${testName}`);
         this.skippedTests.add(testName);
@@ -2945,52 +3064,25 @@ class WebRTCTroubleshooting {
             this.currentTestAbortController.abort();
         }
 
+        if (testName === 'microphone') {
+            this.teardownMicrophoneSkip();
+        } else if (testName === 'speaker') {
+            this.teardownSpeakerSkip();
+        } else if (testName === 'network') {
+            void this.finalizeNetworkSkipFromUser();
+        } else if (testName === 'resolution') {
+            this.isResolutionTesting = false;
+        }
+
         // Find the next test to run
         const testOrder = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
         const currentIndex = testOrder.indexOf(testName);
         const nextIndex = currentIndex + 1;
 
-        // If there are more tests, continue the sequence
         if (nextIndex < testOrder.length) {
-            // Update UI to show next step
             this.updateStep(nextIndex);
-            
-            // Continue the test sequence from the next test
-            // This will be handled by the main loop in runTestSequence
-        } else {
-            // No more tests, show the report
-            this.testSequenceRunning = false;
-            this.testSequenceAbortController = null;
-            this.showTestReport();
         }
-    }
-    
-    
-    stopTestOperations(testName) {
-        // Stop any ongoing operations for the specified test
-        if (testName === 'network') {
-            // Stop network test operations
-            if (this.networkInterval) {
-                clearInterval(this.networkInterval);
-                this.networkInterval = null;
-            }
-            // Leave Agora clients and channels as they are - they'll be cleaned up later
-        } else if (testName === 'resolution') {
-            // Stop resolution test operations
-            if (this.resolutionInterval) {
-                clearInterval(this.resolutionInterval);
-                this.resolutionInterval = null;
-            }
-            // Set flag to stop the resolution test loop
-            this.isResolutionTesting = false;
-        } else if (testName === 'speaker') {
-            // Speaker test timeout is already handled above
-        } else if (testName === 'microphone') {
-            // Microphone test timeout is already handled above
-        } else if (testName === 'network') {
-            this.stopNetworkMonitoring();
-        }
-        // Browser, microphone tests don't have ongoing operations to stop
+        // Final test: showTestReport runs once in runTestSequence's finally block.
     }
     
     getResultElementId(testName) {
