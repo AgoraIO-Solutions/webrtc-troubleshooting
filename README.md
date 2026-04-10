@@ -1,245 +1,123 @@
 # Agora WebRTC Troubleshooting Demo
 
-A comprehensive HTML/JavaScript WebRTC troubleshooting tool that helps diagnose and test Agora Web SDK functionality. This is a complete revamp of the original Vue-based demo, rebuilt from scratch using vanilla HTML, CSS, and JavaScript.
+A browser-based tool to exercise and debug [Agora Web SDK](https://docs.agora.io/en/sdks?platform=web) behavior: browser checks, microphone and speaker tests, resolution sweeps, and a short network-quality session with charts. The UI is vanilla HTML, CSS, and JavaScript (no framework).
 
-## 🚀 Features
+## Branches
 
-### Core Functionality
-- **Browser Compatibility Check** - Verifies if the browser supports Agora Web SDK
-- **Microphone Testing** - Tests microphone functionality with real-time volume monitoring
-- **Speaker Testing** - Tests audio output with sample audio playback
-- **Resolution Testing** - Tests various video resolutions (120p to 1080p)
-- **Network Quality Monitoring** - Real-time network statistics with charts
+| Branch | Purpose |
+|--------|---------|
+| **`master`** (this branch) | Small **Node/Express** app: serves the UI from `public/`, exposes **`/api/config`** and optional **`/api/rtc-tokens`**. Credentials come from **environment variables** (see below). |
+| **`no_appid`** | **Static** layout: `index.html`, `app.js`, and `styles.css` at the **repository root**. Developers enter **App ID, channel, tokens, and UIDs** in the UI—no backend or `.env`. |
 
-### Advanced Features
-- **Cloud Proxy Support** - Multiple proxy modes (UDP 443, TCP fallback, TCP TLS)
-- **Real-time Charts** - Google Charts integration for bitrate and packet loss visualization
-- **Comprehensive Reporting** - Detailed test reports with downloadable logs
-- **Multi-language Support** - English and Chinese language support
-- **Responsive Design** - Works on desktop, tablet, and mobile devices
+## Features
 
-### Technical Features
-- **Agora Web SDK Integration** - Full integration with Agora Web SDK v4.x
-- **Error Handling** - Comprehensive error handling and user feedback
-- **Live Testing** - Real-time video/audio testing capabilities
-- **Logging System** - Detailed logging for troubleshooting
-- **Modern UI/UX** - Clean, intuitive interface with smooth animations
+- **Browser compatibility** check for the Agora Web SDK
+- **Microphone** test with live level metering; **speaker** test with audible tone and confirm/deny controls
+- **Resolution** sweep (e.g. 120p–1080p) with skip-safe flow
+- **Network** test with bitrate and packet-loss charts (stats interpreted consistently with the SDK)
+- **Per-step skip** controls and improved teardown when skipping
+- **Cloud proxy** options in the UI (modes **3** and **5**)
+- **Optional** server-generated RTC tokens when `AGORA_APP_CERTIFICATE` is set
+- **Download logs** and a summarized **test report**
 
-## 📋 Prerequisites
+## Prerequisites
 
-- Modern web browser (Chrome, Firefox, Safari, Edge)
-- Agora App ID (get one from [Agora Console](https://console.agora.io/))
-- HTTPS connection (required for camera/microphone access)
-- Internet connection for Agora services
+- **Node.js** 18+ recommended (for `master`)
+- A modern desktop browser (Chrome, Firefox, Safari, or Edge)
+- An [Agora](https://console.agora.io/) **App ID**; for token mode, an **App Certificate**
+- **HTTPS** (or **localhost**) for camera/microphone access in the browser
 
-## 🛠️ Installation
+## Quick start (`master`)
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/AgoraIO-Solutions/webrtc-troubleshooting-demo.git
-   cd webrtc-troubleshooting-demo
-   ```
-
-2. **Open in browser**
-   ```bash
-   # For local development, use a local server
-   python -m http.server 8000
-   # or
-   npx serve .
-   # or
-   # Simply open index.html in a modern browser
-   ```
-
-3. **Configure your App ID**
-   - Open `index.html` in your browser
-   - Enter your Agora App ID in the configuration section
-   - Optionally enter a token for authentication
-
-## 🎯 Usage
-
-### Basic Testing
-1. **Start the Test**
-   - Enter your Agora App ID
-   - Optionally configure cloud proxy settings
-   - Click "Start Test" to begin
-
-2. **Follow the Steps**
-   - The tool will guide you through 5 test steps:
-     1. Browser compatibility check
-     2. Microphone functionality test
-     3. Speaker/headphone test
-     4. Video resolution test
-     5. Network connectivity test
-
-3. **Review Results**
-   - View the comprehensive test report
-   - Download logs for further analysis
-   - Share results with your team
-
-### Advanced Configuration
-
-#### Cloud Proxy Settings
-- **Mode 3**: UDP 443, no TCP fallback
-- **Mode 4**: UDP 443 with TCP fallback  
-- **Mode 5**: TCP TLS
-
-#### Test Parameters
-- **Channel Name**: Auto-generated or custom
-- **User ID**: Optional custom user ID
-- **Token**: Optional authentication token
-
-## 📊 Test Results
-
-The tool provides detailed results for each test:
-
-### Browser Compatibility
-- ✅ Fully supported
-- ⚠️ Some functions may be limited
-- ❌ Not supported
-
-### Microphone Test
-- ✅ Microphone works well
-- ⚠️ Can barely hear you
-- ❌ Microphone test failed
-
-### Speaker Test
-- ✅ Speaker works well
-- ❌ Something is wrong with the speaker
-
-### Resolution Test
-- Tests resolutions from 120p to 1080p
-- Shows actual vs expected resolution
-- Identifies unsupported resolutions
-
-### Network Test
-- Real-time bitrate monitoring
-- Packet loss analysis
-- Connection quality assessment
-
-## 🔧 Technical Details
-
-### Architecture
-- **Frontend**: Vanilla HTML5, CSS3, JavaScript ES6+
-- **Charts**: Google Charts API
-- **WebRTC**: Agora Web SDK v4.x
-- **Styling**: Modern CSS with CSS Grid and Flexbox
-
-### Browser Support
-- Chrome 70+
-- Firefox 65+
-- Safari 12+
-- Edge 79+
-
-### File Structure
-```
-webrtc-troubleshooting-demo/
-├── index.html          # Main HTML file
-├── demo.html           # Demo showcase page
-├── styles.css          # CSS styles
-├── app.js             # JavaScript application
-└── README.md          # Documentation
+```bash
+git clone https://github.com/AgoraIO-Solutions/webrtc-troubleshooting-demo.git
+cd webrtc-troubleshooting-demo
+npm install
+cp .env.example .env
+# Edit .env: set AGORA_APP_ID (required for a useful demo); optionally AGORA_APP_CERTIFICATE
+npm start
 ```
 
-## 🚀 Advanced Features
+Open **http://localhost:3000** (or the port set in `PORT`). The UI loads **App ID** from the server when configured; with a certificate set, the app can obtain **RTC tokens** and UIDs from **`POST /api/rtc-tokens`** automatically.
 
-### Live Testing
-- Real-time video/audio testing
-- Dual-client architecture (sender/receiver)
-- Network quality monitoring
-- Performance metrics
+## Environment variables
 
-### Logging and Debugging
-- Comprehensive error logging
-- Downloadable test reports
-- Network statistics
-- Performance metrics
+Defined in `.env` (see `.env.example`):
 
-### Customization
-- Easy to modify test parameters
-- Extensible architecture
-- Customizable UI themes
-- Additional test cases
+| Variable | Description |
+|----------|-------------|
+| `AGORA_APP_ID` | App ID returned by `GET /api/config` and used for token building |
+| `AGORA_APP_CERTIFICATE` | If set with App ID, enables **`POST /api/rtc-tokens`** |
+| `TOKEN_API_SECRET` | Optional. If set, clients must send `X-API-Key: <value>` (or `Authorization: Bearer <value>`) on token requests |
+| `PORT` | HTTP port (default `3000`) |
 
-## 🔍 Troubleshooting
+Never commit `.env` or your certificate; they are listed in `.gitignore`.
 
-### Common Issues
+## HTTP API (for operators)
 
-1. **Camera/Microphone Access Denied**
-   - Ensure HTTPS connection
-   - Check browser permissions
-   - Try different browser
+- **`GET /api/config`** — JSON: `appId`, `tokenServiceEnabled`, and a short `message`.
+- **`POST /api/rtc-tokens`** — JSON body: `channelName` (required); optional `sendUid`, `recvUid`, `tokenExpireSeconds`, `privilegeExpireSeconds`. Returns tokens and UIDs when the server is configured with App ID and certificate.
 
-2. **Network Connection Failed**
-   - Check internet connection
-   - Verify App ID
-   - Try with cloud proxy enabled
+## Using the demo
 
-3. **Charts Not Displaying**
-   - Check internet connection
-   - Verify Google Charts API access
-   - Check browser console for errors
+1. Start the server (`npm start`) and open the app URL.
+2. Optionally adjust **Cloud proxy** in the config area.
+3. Click **Start Test** and walk through the five steps, or use **Skip** on any step.
+4. Review the report and use **Download Logs** if you need a trace for support.
 
-### Debug Mode
-- Open browser developer tools
-- Check console for detailed error messages
-- Download logs for analysis
-- Share logs with support team
+## Project layout (`master`)
 
-## 📈 Performance
+```
+webrtc-troubleshooting/
+├── public/
+│   ├── index.html      # Main UI
+│   ├── app.js          # Client application
+│   ├── styles.css
+│   └── demo.html       # Extra demo page
+├── server.js           # Express + static files + API routes
+├── package.json
+├── .env.example
+└── README.md
+```
 
-### Optimizations
-- Lazy loading of resources
-- Efficient chart rendering
-- Minimal memory footprint
-- Fast test execution
+## Stack
 
-### Metrics
-- Test completion time: ~30-60 seconds
-- Memory usage: <50MB
-- Network usage: <10MB per test
-- Browser compatibility: 95%+
+- **Frontend:** HTML5, CSS3, ES modules / modern JavaScript
+- **Charts:** Google Charts (loaded from Google’s CDN)
+- **SDK:** Agora Web SDK (loaded from Agora’s CDN in `index.html`)
+- **Server:** Express 5, `dotenv`, `agora-token`
 
-## 🤝 Contributing
+## Browser support
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+Recent versions of Chrome, Firefox, Safari, and Edge (WebRTC and `getUserMedia` required).
 
-## 📄 License
+## Troubleshooting
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+- **No camera/microphone:** Use **HTTPS** or **http://localhost** and grant permissions when prompted.
+- **Join/token errors:** Confirm App ID (and tokens if your project requires them). On `master`, ensure `.env` matches your Agora project and that token expiry is reasonable.
+- **Charts empty:** Check the browser console and network tab; the chart library loads from Google’s CDN.
 
-## 🙏 Acknowledgments
+## Contributing
 
-- Agora.io for the WebRTC SDK
-- Google Charts for visualization
-- The original Vue.js demo for inspiration
-- The WebRTC community for feedback and support
+1. Fork the repository  
+2. Create a feature branch  
+3. Make and test your changes  
+4. Open a pull request  
 
-## 📞 Support
+## License
 
-For issues and questions:
-- Check the troubleshooting section
-- Review browser console for errors
-- Download and analyze test logs
-- Contact Agora support for SDK-related issues
+ISC — see `package.json`. (A `LICENSE` file may be added separately by the maintainers.)
 
-## 🔄 Version History
+## Acknowledgments
 
-### v2.0.0 (Current)
-- Complete rewrite from Vue.js to vanilla HTML/JS
-- Enhanced UI/UX design
-- Improved error handling
-- Better mobile support
-- Advanced reporting features
+- [Agora](https://www.agora.io/) for the Web SDK  
+- Google Charts for visualization  
+- Community feedback on WebRTC troubleshooting workflows  
 
-### v1.0.0 (Original)
-- Vue.js based implementation
-- Basic testing functionality
-- Simple UI design
+## Support
+
+For SDK or console issues, use [Agora support](https://www.agora.io/en/customer-support/) and attach downloaded logs from this tool when relevant.
 
 ---
 
-**Note**: This tool is designed for testing and troubleshooting WebRTC applications. Always test in a production-like environment and follow Agora's best practices for optimal performance.
+**Note:** Use this demo in environments that match how you ship (network, proxy, token policy). It is for diagnostics, not a production app template.
