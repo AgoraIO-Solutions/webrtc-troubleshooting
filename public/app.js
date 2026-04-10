@@ -171,6 +171,53 @@ class WebRTCTroubleshooting {
         return 0;
     }
 
+    /**
+     * getLocalVideoStats / getLocalAudioStats may return a flat stats object or a map of trackId -> stats.
+     * Object.keys(raw)[0] is wrong for flat objects (e.g. first key is sendVolumeLevel).
+     */
+    localTrackStatsEntries(raw) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            return [];
+        }
+        const isStatsObj = (o) => {
+            if (!o || typeof o !== 'object' || Array.isArray(o)) return false;
+            return (
+                'sendBitrate' in o ||
+                'sentBitrate' in o ||
+                'sendBytes' in o ||
+                'sendPackets' in o ||
+                'currentPacketLossRate' in o
+            );
+        };
+        if (isStatsObj(raw)) {
+            return [raw];
+        }
+        const out = [];
+        for (const k of Object.keys(raw)) {
+            if (isStatsObj(raw[k])) {
+                out.push(raw[k]);
+            }
+        }
+        return out;
+    }
+
+    localSendBitrateKbpsFromStats(raw) {
+        const entries = this.localTrackStatsEntries(raw);
+        let maxBps = 0;
+        for (const e of entries) {
+            const bps = Number(e.sendBitrate ?? e.sentBitrate ?? 0);
+            if (Number.isFinite(bps) && bps > maxBps) {
+                maxBps = bps;
+            }
+        }
+        return maxBps * 0.001;
+    }
+
+    firstLocalTrackStatsObject(raw) {
+        const entries = this.localTrackStatsEntries(raw);
+        return entries.length ? entries[0] : null;
+    }
+
     setupCharts() {
         // Initialize Google Charts when the library is loaded
         if (typeof google !== 'undefined') {
@@ -1479,16 +1526,14 @@ class WebRTCTroubleshooting {
                 console.log('Network Test - Remote Video Stats:', remoteVideoStats);
                 console.log('Network Test - Remote Audio Stats:', remoteAudioStats);
                 
-                // Calculate all 4 bitrates (local maps are keyed by track ID)
-                const localVideoKeys = Object.keys(localVideoStats);
-                const localAudioKeys = Object.keys(localAudioStats);
+                // Calculate all 4 bitrates (local stats: flat object or map keyed by track ID)
                 const remoteVideoKeys = Object.keys(remoteVideoStats);
                 const remoteAudioKeys = Object.keys(remoteAudioStats);
-                const firstLocalVideo = localVideoKeys.length ? localVideoStats[localVideoKeys[0]] : null;
-                const firstLocalAudio = localAudioKeys.length ? localAudioStats[localAudioKeys[0]] : null;
+                const firstLocalVideo = this.firstLocalTrackStatsObject(localVideoStats);
+                const firstLocalAudio = this.firstLocalTrackStatsObject(localAudioStats);
 
-                let localVideoBitrate = Number(firstLocalVideo?.sendBitrate || 0) * 0.001;
-                let localAudioBitrate = Number(firstLocalAudio?.sendBitrate || 0) * 0.001;
+                let localVideoBitrate = this.localSendBitrateKbpsFromStats(localVideoStats);
+                let localAudioBitrate = this.localSendBitrateKbpsFromStats(localAudioStats);
 
                 let remoteVideoBitrate = 0;
                 if (remoteVideoKeys.length > 0) {
@@ -2778,15 +2823,13 @@ class WebRTCTroubleshooting {
                 await this.updateStats(this.liveSendClient, this.liveRecvClient);
                 
                 // Calculate all 4 bitrates for live monitoring
-                const localVideoKeys = Object.keys(localVideoStats);
-                const localAudioKeys = Object.keys(localAudioStats);
                 const remoteVideoKeys = Object.keys(remoteVideoStats);
                 const remoteAudioKeys = Object.keys(remoteAudioStats);
-                const firstLocalVideo = localVideoKeys.length ? localVideoStats[localVideoKeys[0]] : null;
-                const firstLocalAudio = localAudioKeys.length ? localAudioStats[localAudioKeys[0]] : null;
+                const firstLocalVideo = this.firstLocalTrackStatsObject(localVideoStats);
+                const firstLocalAudio = this.firstLocalTrackStatsObject(localAudioStats);
 
-                let localVideoBitrate = Number(firstLocalVideo?.sendBitrate || 0) * 0.001;
-                let localAudioBitrate = Number(firstLocalAudio?.sendBitrate || 0) * 0.001;
+                let localVideoBitrate = this.localSendBitrateKbpsFromStats(localVideoStats);
+                let localAudioBitrate = this.localSendBitrateKbpsFromStats(localAudioStats);
 
                 let remoteVideoBitrate = 0;
                 if (remoteVideoKeys.length > 0) {
@@ -2945,13 +2988,13 @@ class WebRTCTroubleshooting {
             const localAudioStats = await sendClient.getLocalAudioStats();
 
             console.log("📹 Local Video Stats:");
-            Object.entries(localVideoStats).forEach(([trackId, stats]) => {
-                console.log(`TrackID: ${trackId}`, stats);
+            this.localTrackStatsEntries(localVideoStats).forEach((stats, i) => {
+                console.log(`Local video entry ${i}:`, stats);
             });
 
             console.log("🎤 Local Audio Stats:");
-            Object.entries(localAudioStats).forEach(([trackId, stats]) => {
-                console.log(`TrackID: ${trackId}`, stats);
+            this.localTrackStatsEntries(localAudioStats).forEach((stats, i) => {
+                console.log(`Local audio entry ${i}:`, stats);
             });
 
             // Remote stats (by UID)
