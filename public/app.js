@@ -290,7 +290,29 @@ class WebRTCTroubleshooting {
             });
         });
         
-        // Speaker test buttons - these are now attached dynamically in createTestAudio()
+        // Speaker test: one delegated listener so repeat runs do not stack handlers
+        const speakerResultEl = document.getElementById('speakerResult');
+        if (speakerResultEl) {
+            speakerResultEl.addEventListener('click', (e) => {
+                const t = e.target instanceof Element ? e.target : e.target.parentElement;
+                if (!(t instanceof Element)) return;
+                if (t.closest('#playTestAudio')) {
+                    this.onSpeakerPlayMainClicked();
+                    return;
+                }
+                if (t.closest('#playTestAudioAgain')) {
+                    this.playSpeakerTestTone?.();
+                    return;
+                }
+                if (t.closest('#speakerYes')) {
+                    if (this.speakerResolve) this.handleSpeakerResult(true);
+                    return;
+                }
+                if (t.closest('#speakerNo')) {
+                    if (this.speakerResolve) this.handleSpeakerResult(false);
+                }
+            });
+        }
         
         // Modal controls
         document.getElementById('closeModal').addEventListener('click', () => this.closeModal());
@@ -886,6 +908,33 @@ class WebRTCTroubleshooting {
         }
     }
     
+    resetSpeakerTestPanelUi() {
+        const msgEl = document.getElementById('speakerResultMessage');
+        if (msgEl) msgEl.innerHTML = '';
+        const playBtn = document.getElementById('playTestAudio');
+        const playAgainBtn = document.getElementById('playTestAudioAgain');
+        const speakerButtons = document.querySelector('#speakerResult .speaker-buttons');
+        if (playBtn) {
+            playBtn.style.display = '';
+        }
+        if (playAgainBtn) {
+            playAgainBtn.style.display = 'none';
+        }
+        if (speakerButtons) {
+            speakerButtons.style.display = 'none';
+        }
+    }
+    
+    onSpeakerPlayMainClicked() {
+        this.playSpeakerTestTone?.();
+        const playBtn = document.getElementById('playTestAudio');
+        const playAgainBtn = document.getElementById('playTestAudioAgain');
+        const speakerButtons = document.querySelector('#speakerResult .speaker-buttons');
+        if (playAgainBtn) playAgainBtn.style.display = 'inline-block';
+        if (speakerButtons) speakerButtons.style.display = 'flex';
+        if (playBtn) playBtn.style.display = 'none';
+    }
+    
     async runSpeakerCheck() {
         // Check if this test has been skipped
         if (this.skippedTests.has('speaker')) {
@@ -893,6 +942,7 @@ class WebRTCTroubleshooting {
             return;
         }
         
+        this.resetSpeakerTestPanelUi();
         this.updateStep(2);
         this.showMessage('Testing speaker/headphones...', 'info');
         
@@ -935,35 +985,46 @@ class WebRTCTroubleshooting {
     
     createTestAudio() {
         try {
-            // Create a more complex test tone with multiple frequencies
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // Function to play test audio
-            const playTestTone = () => {
+            if (this.audioContext) {
                 try {
-                    // Create a more audible test tone with multiple frequencies
-                    const oscillator1 = audioContext.createOscillator();
-                    const oscillator2 = audioContext.createOscillator();
-                    const gainNode = audioContext.createGain();
+                    this.audioContext.close();
+                } catch (e) {
+                    console.log('Error closing previous audio context:', e);
+                }
+                this.audioContext = null;
+            }
+            this.playSpeakerTestTone = null;
+            
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            this.audioContext = audioContext;
+            
+            this.playSpeakerTestTone = () => {
+                try {
+                    const ctx = this.audioContext;
+                    if (!ctx || ctx.state === 'closed') return;
+                    if (ctx.state === 'suspended') {
+                        void ctx.resume();
+                    }
+                    const oscillator1 = ctx.createOscillator();
+                    const oscillator2 = ctx.createOscillator();
+                    const gainNode = ctx.createGain();
                     
                     oscillator1.connect(gainNode);
                     oscillator2.connect(gainNode);
-                    gainNode.connect(audioContext.destination);
+                    gainNode.connect(ctx.destination);
                     
-                    // Two frequencies for better audibility
-                    oscillator1.frequency.setValueAtTime(440, audioContext.currentTime); // A4 note
-                    oscillator2.frequency.setValueAtTime(880, audioContext.currentTime); // A5 note
+                    oscillator1.frequency.setValueAtTime(440, ctx.currentTime);
+                    oscillator2.frequency.setValueAtTime(880, ctx.currentTime);
                     oscillator1.type = 'sine';
                     oscillator2.type = 'sine';
                     
-                    // Higher volume for better audibility
-                    gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 4);
+                    gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 4);
                     
-                    oscillator1.start(audioContext.currentTime);
-                    oscillator2.start(audioContext.currentTime);
-                    oscillator1.stop(audioContext.currentTime + 4);
-                    oscillator2.stop(audioContext.currentTime + 4);
+                    oscillator1.start(ctx.currentTime);
+                    oscillator2.start(ctx.currentTime);
+                    oscillator1.stop(ctx.currentTime + 4);
+                    oscillator2.stop(ctx.currentTime + 4);
                     
                     this.showMessage('Playing test tone - Can you hear it?', 'info');
                 } catch (error) {
@@ -971,58 +1032,6 @@ class WebRTCTroubleshooting {
                     this.showMessage('Could not play test audio - Please check your speakers', 'warning');
                 }
             };
-            
-            // Add event listeners with proper timing
-            setTimeout(() => {
-                const playBtn = document.getElementById('playTestAudio');
-                const playAgainBtn = document.getElementById('playTestAudioAgain');
-                const speakerYesBtn = document.getElementById('speakerYes');
-                const speakerNoBtn = document.getElementById('speakerNo');
-                
-                console.log('Speaker buttons found:', { playBtn, playAgainBtn, speakerYesBtn, speakerNoBtn });
-                console.log('Speaker result element:', document.getElementById('speakerResult'));
-                console.log('Speaker result innerHTML:', document.getElementById('speakerResult')?.innerHTML);
-                
-                if (playBtn) {
-                    playBtn.addEventListener('click', () => {
-                        playTestTone();
-                        
-                        // Show the play again button and yes/no buttons
-                        if (playAgainBtn) playAgainBtn.style.display = 'inline-block';
-                        const speakerButtons = document.querySelector('.speaker-buttons');
-                        if (speakerButtons) speakerButtons.style.display = 'flex';
-                        playBtn.style.display = 'none';
-                    });
-                }
-                
-                if (playAgainBtn) {
-                    playAgainBtn.addEventListener('click', () => {
-                        playTestTone();
-                    });
-                }
-                
-                // Add event listeners for speaker test buttons
-                if (speakerYesBtn) {
-                    speakerYesBtn.addEventListener('click', () => {
-                        console.log('Speaker Yes clicked');
-                        if (this.speakerResolve && typeof this.speakerResolve === 'function') {
-                            this.handleSpeakerResult(true);
-                        }
-                    });
-                }
-                
-                if (speakerNoBtn) {
-                    speakerNoBtn.addEventListener('click', () => {
-                        console.log('Speaker No clicked');
-                        if (this.speakerResolve && typeof this.speakerResolve === 'function') {
-                            this.handleSpeakerResult(false);
-                        }
-                    });
-                }
-            }, 100);
-            
-            this.audioContext = audioContext;
-            
         } catch (error) {
             console.error('Could not create test audio:', error);
             this.showMessage('Could not play test audio - Please check your speakers', 'warning');
@@ -2328,6 +2337,13 @@ class WebRTCTroubleshooting {
     }
     
     updateStepResult(elementId, message, type) {
+        if (elementId === 'speakerResult') {
+            const msgEl = document.getElementById('speakerResultMessage');
+            if (msgEl) {
+                msgEl.innerHTML = `<div class="step-result-${type}">${message}</div>`;
+            }
+            return;
+        }
         const element = document.getElementById(elementId);
         if (element) {
             element.innerHTML = `<div class="step-result-${type}">${message}</div>`;
@@ -2524,6 +2540,7 @@ class WebRTCTroubleshooting {
         };
         
         this.generateChannelName();
+        this.resetSpeakerTestPanelUi();
         this.showMessage('Test reset successfully', 'info');
     }
     
@@ -3071,6 +3088,7 @@ class WebRTCTroubleshooting {
             }
             this.audioContext = null;
         }
+        this.playSpeakerTestTone = null;
         if (this.speakerResolve) {
             const r = this.speakerResolve;
             this.speakerResolve = null;
@@ -3181,6 +3199,9 @@ class WebRTCTroubleshooting {
         // Only clear status messages, preserve the original HTML structure
         const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
         testNames.forEach(testName => {
+            if (testName === 'speaker') {
+                this.resetSpeakerTestPanelUi();
+            }
             const resultElementId = this.getResultElementId(testName);
             const resultElement = document.getElementById(resultElementId);
             if (resultElement) {
