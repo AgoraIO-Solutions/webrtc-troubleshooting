@@ -694,15 +694,15 @@ class WebRTCTroubleshooting {
                     <div class="mic-instructions">
                         <h4>🎤 Microphone Test</h4>
                         <p>Speak into your microphone and watch the volume bar below.</p>
-                        <p>Click "Test Complete" when you're ready to proceed.</p>
+                        <p>If the bar moves when you talk, choose <strong>Yes, it's working</strong>. Otherwise choose <strong>No</strong>.</p>
                     </div>
                     <div class="volume-meter">
                         <div class="volume-bar" id="volumeBar"></div>
                         <div class="volume-text" id="volumeText">Speak into your microphone - Watch the bar above!</div>
                     </div>
-                    <div class="mic-controls">
-                        <button id="micTestComplete" class="btn-primary">✅ Test Complete</button>
-                        <button id="micTestFailed" class="btn-danger">❌ Microphone Not Working</button>
+                    <div class="mic-controls speaker-buttons">
+                        <button type="button" id="micTestYes" class="btn-success">✅ Yes, it's working</button>
+                        <button type="button" id="micTestNo" class="btn-danger">❌ No, it's not working</button>
                     </div>
                 </div>
             `;
@@ -779,14 +779,14 @@ class WebRTCTroubleshooting {
                 
                 // Add event listeners for user interaction - use setTimeout to ensure DOM is ready
                 setTimeout(() => {
-                    const completeBtn = document.getElementById('micTestComplete');
-                    const failedBtn = document.getElementById('micTestFailed');
+                    const yesBtn = document.getElementById('micTestYes');
+                    const noBtn = document.getElementById('micTestNo');
                     
-                    console.log('Microphone buttons found:', { completeBtn, failedBtn });
+                    console.log('Microphone buttons found:', { yesBtn, noBtn });
                     
-                    if (completeBtn) {
-                        completeBtn.addEventListener('click', () => {
-                            console.log('Microphone Complete clicked');
+                    if (yesBtn) {
+                        yesBtn.addEventListener('click', () => {
+                            console.log('Microphone Yes clicked');
                             if (!testCompleted) {
                                 testCompleted = true;
                                 this.clearMicVolumeMonitoring();
@@ -816,7 +816,7 @@ class WebRTCTroubleshooting {
                     status: 'success',
                     message: 'Microphone OK'
                 };
-                                    this.updateStepResult('micResult', '✅ Microphone works well - Good volume detected!', 'success');
+                                    this.updateStepResult('micResult', '✅ Yes — your microphone is working. Good volume detected!', 'success');
                                 } else {
                                     // Check if test was skipped before setting results
                                     if (this.skippedTests.has('microphone')) {
@@ -834,7 +834,7 @@ class WebRTCTroubleshooting {
                                         status: 'warning',
                                         message: 'Low volume detected'
                                     };
-                                    this.updateStepResult('micResult', '⚠️ Can barely hear you - Try speaking louder next time', 'warning');
+                                    this.updateStepResult('micResult', '⚠️ You chose “working,” but the level stayed low — try speaking louder or check your mic.', 'warning');
                                 }
                                 
                                 if (this.micResolve && typeof this.micResolve === 'function') {
@@ -847,9 +847,9 @@ class WebRTCTroubleshooting {
                         });
                     }
                     
-                    if (failedBtn) {
-                        failedBtn.addEventListener('click', () => {
-                            console.log('Microphone Failed clicked');
+                    if (noBtn) {
+                        noBtn.addEventListener('click', () => {
+                            console.log('Microphone No clicked');
                             if (!testCompleted) {
                                 testCompleted = true;
                                 this.clearMicVolumeMonitoring();
@@ -875,7 +875,7 @@ class WebRTCTroubleshooting {
                                     status: 'error',
                                     message: 'Microphone failed'
                                 };
-                                this.updateStepResult('micResult', '❌ Microphone test failed - Check your microphone settings', 'error');
+                                this.updateStepResult('micResult', '❌ No — microphone not working as expected. Check your mic and system settings.', 'error');
                                 
                                 if (this.micResolve && typeof this.micResolve === 'function') {
                                     this.micResolve();
