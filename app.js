@@ -24,6 +24,7 @@ class WebRTCTroubleshooting {
         this.audioTrack = null;
         this.videoTrack = null;
         this.localAudioTrack = null;
+        this.micVolumeInterval = null;
         
         // Test results
         this.testResults = {
@@ -117,6 +118,92 @@ class WebRTCTroubleshooting {
         AgoraRTC.setLogLevel(0); // 0 = DEBUG, 1 = INFO, 2 = WARN, 3 = ERROR, 4 = NONE
         AgoraRTC.enableLogUpload();
     }
+
+    /**
+     * Agora exposes loss as a short-window rate and/or cumulative packet counts.
+     * Never treat sendPacketsLost / receivePacketsLost as a percentage.
+     */
+    normalizePacketLossRateToPercent(rate) {
+        if (rate == null || !Number.isFinite(rate) || rate < 0) return 0;
+        if (rate <= 1) return Math.min(100, rate * 100);
+        return Math.min(100, rate);
+    }
+
+    packetLossPercentFromLocalTrack(stats) {
+        if (!stats || typeof stats !== 'object') return 0;
+        if (stats.currentPacketLossRate != null && Number.isFinite(stats.currentPacketLossRate)) {
+            return this.normalizePacketLossRateToPercent(stats.currentPacketLossRate);
+        }
+        const lost = Number(stats.sendPacketsLost);
+        const sent = Number(stats.sendPackets);
+        if (Number.isFinite(lost) && Number.isFinite(sent) && lost + sent > 0) {
+            return Math.min(100, (lost / (lost + sent)) * 100);
+        }
+        return 0;
+    }
+
+    packetLossPercentFromRemoteTrack(stats) {
+        if (!stats || typeof stats !== 'object') return 0;
+        if (stats.currentPacketLossRate != null && Number.isFinite(stats.currentPacketLossRate)) {
+            return this.normalizePacketLossRateToPercent(stats.currentPacketLossRate);
+        }
+        if (stats.packetLossRate != null && Number.isFinite(stats.packetLossRate)) {
+            return this.normalizePacketLossRateToPercent(stats.packetLossRate);
+        }
+        const lost = Number(stats.receivePacketsLost);
+        const recv = Number(stats.receivePackets);
+        if (Number.isFinite(lost) && Number.isFinite(recv) && lost + recv > 0) {
+            return Math.min(100, (lost / (lost + recv)) * 100);
+        }
+        return 0;
+    }
+
+    /**
+     * getLocalVideoStats / getLocalAudioStats may return a flat stats object or a map of trackId -> stats.
+     * Object.keys(raw)[0] is wrong for flat objects (e.g. first key is sendVolumeLevel).
+     */
+    localTrackStatsEntries(raw) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            return [];
+        }
+        const isStatsObj = (o) => {
+            if (!o || typeof o !== 'object' || Array.isArray(o)) return false;
+            return (
+                'sendBitrate' in o ||
+                'sentBitrate' in o ||
+                'sendBytes' in o ||
+                'sendPackets' in o ||
+                'currentPacketLossRate' in o
+            );
+        };
+        if (isStatsObj(raw)) {
+            return [raw];
+        }
+        const out = [];
+        for (const k of Object.keys(raw)) {
+            if (isStatsObj(raw[k])) {
+                out.push(raw[k]);
+            }
+        }
+        return out;
+    }
+
+    localSendBitrateKbpsFromStats(raw) {
+        const entries = this.localTrackStatsEntries(raw);
+        let maxBps = 0;
+        for (const e of entries) {
+            const bps = Number(e.sendBitrate ?? e.sentBitrate ?? 0);
+            if (Number.isFinite(bps) && bps > maxBps) {
+                maxBps = bps;
+            }
+        }
+        return maxBps * 0.001;
+    }
+
+    firstLocalTrackStatsObject(raw) {
+        const entries = this.localTrackStatsEntries(raw);
+        return entries.length ? entries[0] : null;
+    }
     
     setupEventListeners() {
         // Start test button
@@ -143,7 +230,29 @@ class WebRTCTroubleshooting {
             });
         });
         
-        // Speaker test buttons - these are now attached dynamically in createTestAudio()
+        // Speaker test: one delegated listener so repeat runs do not stack handlers
+        const speakerResultEl = document.getElementById('speakerResult');
+        if (speakerResultEl) {
+            speakerResultEl.addEventListener('click', (e) => {
+                const t = e.target instanceof Element ? e.target : e.target.parentElement;
+                if (!(t instanceof Element)) return;
+                if (t.closest('#playTestAudio')) {
+                    this.onSpeakerPlayMainClicked();
+                    return;
+                }
+                if (t.closest('#playTestAudioAgain')) {
+                    this.playSpeakerTestTone?.();
+                    return;
+                }
+                if (t.closest('#speakerYes')) {
+                    if (this.speakerResolve) this.handleSpeakerResult(true);
+                    return;
+                }
+                if (t.closest('#speakerNo')) {
+                    if (this.speakerResolve) this.handleSpeakerResult(false);
+                }
+            });
+        }
         
         // Modal controls
         document.getElementById('closeModal').addEventListener('click', () => this.closeModal());
@@ -500,6 +609,16 @@ class WebRTCTroubleshooting {
         
         try {
             this.localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+            if (this.skippedTests.has('microphone')) {
+                try {
+                    await this.localAudioTrack.close();
+                } catch (e) {
+                    console.log('Error closing mic after skip during create:', e);
+                }
+                this.localAudioTrack = null;
+                this.microphoneTestRunning = false;
+                return;
+            }
             
             // Show the volume meter with user controls
             const micResult = document.getElementById('micResult');
@@ -508,15 +627,15 @@ class WebRTCTroubleshooting {
                     <div class="mic-instructions">
                         <h4>🎤 Microphone Test</h4>
                         <p>Speak into your microphone and watch the volume bar below.</p>
-                        <p>Click "Test Complete" when you're ready to proceed.</p>
+                        <p>If the bar moves when you talk, choose <strong>Yes, it's working</strong>. Otherwise choose <strong>No</strong>.</p>
                     </div>
                     <div class="volume-meter">
                         <div class="volume-bar" id="volumeBar"></div>
                         <div class="volume-text" id="volumeText">Speak into your microphone - Watch the bar above!</div>
                     </div>
-                    <div class="mic-controls">
-                        <button id="micTestComplete" class="btn-primary">✅ Test Complete</button>
-                        <button id="micTestFailed" class="btn-danger">❌ Microphone Not Working</button>
+                    <div class="mic-controls speaker-buttons">
+                        <button type="button" id="micTestYes" class="btn-success">✅ Yes, it's working</button>
+                        <button type="button" id="micTestNo" class="btn-danger">❌ No, it's not working</button>
                     </div>
                 </div>
             `;
@@ -526,11 +645,11 @@ class WebRTCTroubleshooting {
             let maxVolume = 0;
             let testCompleted = false;
             
-            const volumeInterval = setInterval(() => {
+            this.micVolumeInterval = setInterval(() => {
                 // Check if audio track exists before calling getVolumeLevel
                 if (!this.localAudioTrack) {
                     console.log('Audio track not available, stopping volume monitoring');
-                    clearInterval(volumeInterval);
+                    this.clearMicVolumeMonitoring();
                     return;
                 }
                 
@@ -550,7 +669,12 @@ class WebRTCTroubleshooting {
                 if (volumeText) {
                     volumeText.textContent = `Current volume: ${Math.round(volumePercent)}% - Speak louder!`;
                 }
-            }, 100);
+                }, 100);
+            
+            if (this.skippedTests.has('microphone')) {
+                this.teardownMicrophoneSkip();
+                return;
+            }
             
             // Return a promise that resolves when user clicks a button
             return new Promise((resolve) => {
@@ -560,7 +684,7 @@ class WebRTCTroubleshooting {
                 this.micTimeout = setTimeout(() => {
                     if (!testCompleted) {
                         testCompleted = true;
-                        clearInterval(volumeInterval);
+                        this.clearMicVolumeMonitoring();
                         if (this.localAudioTrack) {
                             this.localAudioTrack.close();
                         }
@@ -568,6 +692,11 @@ class WebRTCTroubleshooting {
                         // Check if test was skipped before showing timeout message
                         if (this.skippedTests.has('microphone')) {
                             console.log('Microphone test was skipped, not showing timeout message');
+                            if (this.micResolve) {
+                                const r = this.micResolve;
+                                this.micResolve = null;
+                                r();
+                            }
                             return;
                         }
                         
@@ -583,17 +712,17 @@ class WebRTCTroubleshooting {
                 
                 // Add event listeners for user interaction - use setTimeout to ensure DOM is ready
                 setTimeout(() => {
-                    const completeBtn = document.getElementById('micTestComplete');
-                    const failedBtn = document.getElementById('micTestFailed');
+                    const yesBtn = document.getElementById('micTestYes');
+                    const noBtn = document.getElementById('micTestNo');
                     
-                    console.log('Microphone buttons found:', { completeBtn, failedBtn });
+                    console.log('Microphone buttons found:', { yesBtn, noBtn });
                     
-                    if (completeBtn) {
-                        completeBtn.addEventListener('click', () => {
-                            console.log('Microphone Complete clicked');
+                    if (yesBtn) {
+                        yesBtn.addEventListener('click', () => {
+                            console.log('Microphone Yes clicked');
                             if (!testCompleted) {
                                 testCompleted = true;
-                                clearInterval(volumeInterval);
+                                this.clearMicVolumeMonitoring();
                                 if (this.micTimeout) {
                                     clearTimeout(this.micTimeout);
                                     this.micTimeout = null;
@@ -607,6 +736,12 @@ class WebRTCTroubleshooting {
                                     // Check if test was skipped before setting results
                                     if (this.skippedTests.has('microphone')) {
                                         console.log('Microphone test was skipped, not setting results');
+                                        if (this.micResolve) {
+                                            const r = this.micResolve;
+                                            this.micResolve = null;
+                                            r();
+                                        }
+                                        this.microphoneTestRunning = false;
                                         return;
                                     }
                                     
@@ -614,11 +749,17 @@ class WebRTCTroubleshooting {
                     status: 'success',
                     message: 'Microphone OK'
                 };
-                                    this.updateStepResult('micResult', '✅ Microphone works well - Good volume detected!', 'success');
+                                    this.updateStepResult('micResult', '✅ Yes — your microphone is working. Good volume detected!', 'success');
                                 } else {
                                     // Check if test was skipped before setting results
                                     if (this.skippedTests.has('microphone')) {
                                         console.log('Microphone test was skipped, not setting results');
+                                        if (this.micResolve) {
+                                            const r = this.micResolve;
+                                            this.micResolve = null;
+                                            r();
+                                        }
+                                        this.microphoneTestRunning = false;
                                         return;
                                     }
                                     
@@ -626,7 +767,7 @@ class WebRTCTroubleshooting {
                                         status: 'warning',
                                         message: 'Low volume detected'
                                     };
-                                    this.updateStepResult('micResult', '⚠️ Can barely hear you - Try speaking louder next time', 'warning');
+                                    this.updateStepResult('micResult', '⚠️ You chose “working,” but the level stayed low — try speaking louder or check your mic.', 'warning');
                                 }
                                 
                                 if (this.micResolve && typeof this.micResolve === 'function') {
@@ -639,12 +780,12 @@ class WebRTCTroubleshooting {
                         });
                     }
                     
-                    if (failedBtn) {
-                        failedBtn.addEventListener('click', () => {
-                            console.log('Microphone Failed clicked');
+                    if (noBtn) {
+                        noBtn.addEventListener('click', () => {
+                            console.log('Microphone No clicked');
                             if (!testCompleted) {
                                 testCompleted = true;
-                                clearInterval(volumeInterval);
+                                this.clearMicVolumeMonitoring();
                                 if (this.micTimeout) {
                                     clearTimeout(this.micTimeout);
                                     this.micTimeout = null;
@@ -654,6 +795,12 @@ class WebRTCTroubleshooting {
                                 // Check if test was skipped before setting results
                                 if (this.skippedTests.has('microphone')) {
                                     console.log('Microphone test was skipped, not setting results');
+                                    if (this.micResolve) {
+                                        const r = this.micResolve;
+                                        this.micResolve = null;
+                                        r();
+                                    }
+                                    this.microphoneTestRunning = false;
                                     return;
                                 }
                                 
@@ -661,7 +808,7 @@ class WebRTCTroubleshooting {
                                     status: 'error',
                                     message: 'Microphone failed'
                                 };
-                                this.updateStepResult('micResult', '❌ Microphone test failed - Check your microphone settings', 'error');
+                                this.updateStepResult('micResult', '❌ No — microphone not working as expected. Check your mic and system settings.', 'error');
                                 
                                 if (this.micResolve && typeof this.micResolve === 'function') {
                                     this.micResolve();
@@ -693,6 +840,33 @@ class WebRTCTroubleshooting {
             throw error;
         }
     }
+
+    resetSpeakerTestPanelUi() {
+        const msgEl = document.getElementById('speakerResultMessage');
+        if (msgEl) msgEl.innerHTML = '';
+        const playBtn = document.getElementById('playTestAudio');
+        const playAgainBtn = document.getElementById('playTestAudioAgain');
+        const speakerButtons = document.querySelector('#speakerResult .speaker-buttons');
+        if (playBtn) {
+            playBtn.style.display = '';
+        }
+        if (playAgainBtn) {
+            playAgainBtn.style.display = 'none';
+        }
+        if (speakerButtons) {
+            speakerButtons.style.display = 'none';
+        }
+    }
+    
+    onSpeakerPlayMainClicked() {
+        this.playSpeakerTestTone?.();
+        const playBtn = document.getElementById('playTestAudio');
+        const playAgainBtn = document.getElementById('playTestAudioAgain');
+        const speakerButtons = document.querySelector('#speakerResult .speaker-buttons');
+        if (playAgainBtn) playAgainBtn.style.display = 'inline-block';
+        if (speakerButtons) speakerButtons.style.display = 'flex';
+        if (playBtn) playBtn.style.display = 'none';
+    }
     
     async runSpeakerCheck() {
         // Check if this test has been skipped
@@ -701,6 +875,7 @@ class WebRTCTroubleshooting {
             return;
         }
         
+        this.resetSpeakerTestPanelUi();
         this.updateStep(2);
         this.showMessage('Testing speaker/headphones...', 'info');
         
@@ -725,6 +900,11 @@ class WebRTCTroubleshooting {
                 // Check if test was skipped before showing timeout message
                 if (this.skippedTests.has('speaker')) {
                     console.log('Speaker test was skipped, not showing timeout message');
+                    if (this.speakerResolve) {
+                        const r = this.speakerResolve;
+                        this.speakerResolve = null;
+                        r();
+                    }
                     return;
                 }
                 
@@ -738,35 +918,46 @@ class WebRTCTroubleshooting {
     
     createTestAudio() {
         try {
-            // Create a more complex test tone with multiple frequencies
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // Function to play test audio
-            const playTestTone = () => {
+            if (this.audioContext) {
                 try {
-                    // Create a more audible test tone with multiple frequencies
-                    const oscillator1 = audioContext.createOscillator();
-                    const oscillator2 = audioContext.createOscillator();
-                    const gainNode = audioContext.createGain();
+                    this.audioContext.close();
+                } catch (e) {
+                    console.log('Error closing previous audio context:', e);
+                }
+                this.audioContext = null;
+            }
+            this.playSpeakerTestTone = null;
+            
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            this.audioContext = audioContext;
+            
+            this.playSpeakerTestTone = () => {
+                try {
+                    const ctx = this.audioContext;
+                    if (!ctx || ctx.state === 'closed') return;
+                    if (ctx.state === 'suspended') {
+                        void ctx.resume();
+                    }
+                    const oscillator1 = ctx.createOscillator();
+                    const oscillator2 = ctx.createOscillator();
+                    const gainNode = ctx.createGain();
                     
                     oscillator1.connect(gainNode);
                     oscillator2.connect(gainNode);
-                    gainNode.connect(audioContext.destination);
+                    gainNode.connect(ctx.destination);
                     
-                    // Two frequencies for better audibility
-                    oscillator1.frequency.setValueAtTime(440, audioContext.currentTime); // A4 note
-                    oscillator2.frequency.setValueAtTime(880, audioContext.currentTime); // A5 note
+                    oscillator1.frequency.setValueAtTime(440, ctx.currentTime);
+                    oscillator2.frequency.setValueAtTime(880, ctx.currentTime);
                     oscillator1.type = 'sine';
                     oscillator2.type = 'sine';
                     
-                    // Higher volume for better audibility
-                    gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 4);
+                    gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 4);
                     
-                    oscillator1.start(audioContext.currentTime);
-                    oscillator2.start(audioContext.currentTime);
-                    oscillator1.stop(audioContext.currentTime + 4);
-                    oscillator2.stop(audioContext.currentTime + 4);
+                    oscillator1.start(ctx.currentTime);
+                    oscillator2.start(ctx.currentTime);
+                    oscillator1.stop(ctx.currentTime + 4);
+                    oscillator2.stop(ctx.currentTime + 4);
                     
                     this.showMessage('Playing test tone - Can you hear it?', 'info');
                 } catch (error) {
@@ -774,58 +965,6 @@ class WebRTCTroubleshooting {
                     this.showMessage('Could not play test audio - Please check your speakers', 'warning');
                 }
             };
-            
-            // Add event listeners with proper timing
-            setTimeout(() => {
-                const playBtn = document.getElementById('playTestAudio');
-                const playAgainBtn = document.getElementById('playTestAudioAgain');
-                const speakerYesBtn = document.getElementById('speakerYes');
-                const speakerNoBtn = document.getElementById('speakerNo');
-                
-                console.log('Speaker buttons found:', { playBtn, playAgainBtn, speakerYesBtn, speakerNoBtn });
-                console.log('Speaker result element:', document.getElementById('speakerResult'));
-                console.log('Speaker result innerHTML:', document.getElementById('speakerResult')?.innerHTML);
-                
-                if (playBtn) {
-                    playBtn.addEventListener('click', () => {
-                        playTestTone();
-                        
-                        // Show the play again button and yes/no buttons
-                        if (playAgainBtn) playAgainBtn.style.display = 'inline-block';
-                        const speakerButtons = document.querySelector('.speaker-buttons');
-                        if (speakerButtons) speakerButtons.style.display = 'flex';
-                        playBtn.style.display = 'none';
-                    });
-                }
-                
-                if (playAgainBtn) {
-                    playAgainBtn.addEventListener('click', () => {
-                        playTestTone();
-                    });
-                }
-                
-                // Add event listeners for speaker test buttons
-                if (speakerYesBtn) {
-                    speakerYesBtn.addEventListener('click', () => {
-                        console.log('Speaker Yes clicked');
-                        if (this.speakerResolve && typeof this.speakerResolve === 'function') {
-                            this.handleSpeakerResult(true);
-                        }
-                    });
-                }
-                
-                if (speakerNoBtn) {
-                    speakerNoBtn.addEventListener('click', () => {
-                        console.log('Speaker No clicked');
-                        if (this.speakerResolve && typeof this.speakerResolve === 'function') {
-                            this.handleSpeakerResult(false);
-                        }
-                    });
-                }
-            }, 100);
-            
-            this.audioContext = audioContext;
-            
         } catch (error) {
             console.error('Could not create test audio:', error);
             this.showMessage('Could not play test audio - Please check your speakers', 'warning');
@@ -844,6 +983,11 @@ class WebRTCTroubleshooting {
         // Check if test was skipped before setting results
         if (this.skippedTests.has('speaker')) {
             console.log('Speaker test was skipped, not setting results');
+            if (this.speakerResolve) {
+                const r = this.speakerResolve;
+                this.speakerResolve = null;
+                r();
+            }
             return;
         }
         
@@ -866,7 +1010,6 @@ class WebRTCTroubleshooting {
             this.speakerResolve();
         }
     }
-    
     async runResolutionCheck() {
         // Check if this test has been skipped
         if (this.skippedTests.has('resolution')) {
@@ -991,18 +1134,18 @@ class WebRTCTroubleshooting {
                     // Wait for video to load with proper timeout
                     console.log(`Waiting for video to load for ${profile.resolution}...`);
                     await Promise.race([
-                        this.delay(200), // 5 second timeout
+                        this.delay(5000, this.currentTestAbortController),
                         new Promise((resolve) => {
                             const checkVideo = () => {
+                                if (this.skippedTests.has('resolution') || !this.isResolutionTesting) {
+                                    resolve();
+                                    return;
+                                }
                                 const videoElement = document.querySelector('#test-send video');
                                 console.log(`Checking video element for ${profile.resolution}:`, videoElement ? `${videoElement.videoWidth}x${videoElement.videoHeight}` : 'not found');
                                 if (videoElement && videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
                                     console.log(`Video loaded for ${profile.resolution}: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
-                                    if (this.micResolve && typeof this.micResolve === 'function') {
-                                        if (this.micResolve && typeof this.micResolve === 'function') {
-                                    this.micResolve();
-                                }
-                                    }
+                                    resolve();
                                 } else {
                                     setTimeout(checkVideo, 200);
                                 }
@@ -1167,6 +1310,13 @@ class WebRTCTroubleshooting {
             });
             console.log('Network monitoring completed');
             
+            if (this.skippedTests.has('network')) {
+                console.log('Network test skipped or ended early; skipping analysis');
+                this.stopNetworkMonitoring();
+                await this.cleanupAgoraClients();
+                return;
+            }
+            
             // Analyze candidate pairs
             const candidatePairData = await this.analyzeCandidatePairs();
             
@@ -1317,55 +1467,38 @@ class WebRTCTroubleshooting {
                 console.log('Network Test - Remote Video Stats:', remoteVideoStats);
                 console.log('Network Test - Remote Audio Stats:', remoteAudioStats);
                 
-                // Calculate all 4 bitrates
-                const localVideoKeys = Object.keys(localVideoStats);
-                const localAudioKeys = Object.keys(localAudioStats);
+                // Calculate all 4 bitrates (local stats: flat object or map keyed by track ID)
                 const remoteVideoKeys = Object.keys(remoteVideoStats);
                 const remoteAudioKeys = Object.keys(remoteAudioStats);
-                
-                // Local video bitrate - read directly from the flat object
-                let localVideoBitrate = Number(localVideoStats?.sendBitrate || 0) * 0.001;
-                
-                // Local audio bitrate - read directly from the flat object
-                let localAudioBitrate = Number(localAudioStats?.sendBitrate || 0) * 0.001;
-                
-                // Remote video bitrate
+                const firstLocalVideo = this.firstLocalTrackStatsObject(localVideoStats);
+                const firstLocalAudio = this.firstLocalTrackStatsObject(localAudioStats);
+
+                let localVideoBitrate = this.localSendBitrateKbpsFromStats(localVideoStats);
+                let localAudioBitrate = this.localSendBitrateKbpsFromStats(localAudioStats);
+
                 let remoteVideoBitrate = 0;
                 if (remoteVideoKeys.length > 0) {
                     remoteVideoBitrate = Number(remoteVideoStats[remoteVideoKeys[0]]?.receiveBitrate || remoteVideoStats[remoteVideoKeys[0]]?.bitrate || 0) * 0.001;
                 }
-                
-                // Remote audio bitrate
+
                 let remoteAudioBitrate = 0;
                 if (remoteAudioKeys.length > 0) {
                     remoteAudioBitrate = Number(remoteAudioStats[remoteAudioKeys[0]]?.receiveBitrate || remoteAudioStats[remoteAudioKeys[0]]?.bitrate || 0) * 0.001;
                 }
-                
-                // Ensure we have valid numbers and handle edge cases
+
                 const validLocalVideoBitrate = isNaN(localVideoBitrate) || localVideoBitrate < 0 ? 0 : Math.max(0, localVideoBitrate);
                 const validLocalAudioBitrate = isNaN(localAudioBitrate) || localAudioBitrate < 0 ? 0 : Math.max(0, localAudioBitrate);
-                
-                // For remote data, if we don't have remote connections, use local data as fallback
-                // This ensures the charts show meaningful data even in test environments
-                let validRemoteVideoBitrate = isNaN(remoteVideoBitrate) || remoteVideoBitrate < 0 ? 0 : Math.max(0, remoteVideoBitrate);
-                let validRemoteAudioBitrate = isNaN(remoteAudioBitrate) || remoteAudioBitrate < 0 ? 0 : Math.max(0, remoteAudioBitrate);
-                
-                // If remote data is 0 but local data exists, use local data as fallback for testing
-                if (validRemoteVideoBitrate === 0 && validLocalVideoBitrate > 0) {
-                    validRemoteVideoBitrate = validLocalVideoBitrate * 0.8; // Slightly lower to simulate remote
-                }
-                if (validRemoteAudioBitrate === 0 && validLocalAudioBitrate > 0) {
-                    validRemoteAudioBitrate = validLocalAudioBitrate * 0.9; // Slightly lower to simulate remote
-                }
-                
-                // Calculate packet loss - both local and remote
-                const localVideoPacketLoss = Number(localVideoStats?.sendPacketsLost || localVideoStats?.currentPacketLossRate || 0);
-                const localAudioPacketLoss = Number(localAudioStats?.sendPacketsLost || localAudioStats?.currentPacketLossRate || 0);
-                
-                const remoteVideoPacketLoss = remoteVideoKeys.length > 0 ? 
-                    (remoteVideoStats[remoteVideoKeys[0]]?.receivePacketsLost || remoteVideoStats[remoteVideoKeys[0]]?.packetLossRate || 0) : 0;
-                const remoteAudioPacketLoss = remoteAudioKeys.length > 0 ? 
-                    (remoteAudioStats[remoteAudioKeys[0]]?.receivePacketsLost || remoteAudioStats[remoteAudioKeys[0]]?.packetLossRate || 0) : 0;
+                const validRemoteVideoBitrate = isNaN(remoteVideoBitrate) || remoteVideoBitrate < 0 ? 0 : Math.max(0, remoteVideoBitrate);
+                const validRemoteAudioBitrate = isNaN(remoteAudioBitrate) || remoteAudioBitrate < 0 ? 0 : Math.max(0, remoteAudioBitrate);
+
+                const localVideoPacketLoss = this.packetLossPercentFromLocalTrack(firstLocalVideo);
+                const localAudioPacketLoss = this.packetLossPercentFromLocalTrack(firstLocalAudio);
+                const remoteVideoPacketLoss = remoteVideoKeys.length
+                    ? this.packetLossPercentFromRemoteTrack(remoteVideoStats[remoteVideoKeys[0]])
+                    : 0;
+                const remoteAudioPacketLoss = remoteAudioKeys.length
+                    ? this.packetLossPercentFromRemoteTrack(remoteAudioStats[remoteAudioKeys[0]])
+                    : 0;
                 
                 const time = Date.now() - this.testStartTime;
                 
@@ -1412,6 +1545,7 @@ class WebRTCTroubleshooting {
         
         this.testStartTime = Date.now();
     }
+    
     
     stopNetworkMonitoring() {
         if (this.networkInterval) {
@@ -2120,6 +2254,13 @@ class WebRTCTroubleshooting {
     }
     
     updateStepResult(elementId, message, type) {
+        if (elementId === 'speakerResult') {
+            const msgEl = document.getElementById('speakerResultMessage');
+            if (msgEl) {
+                msgEl.innerHTML = `<div class="step-result-${type}">${message}</div>`;
+            }
+            return;
+        }
         const element = document.getElementById(elementId);
         if (element) {
             element.innerHTML = `<div class="step-result-${type}">${message}</div>`;
@@ -2288,6 +2429,8 @@ class WebRTCTroubleshooting {
         
         // Hide all skip buttons
         this.hideAllSkipButtons();
+        
+        this.resetSpeakerTestPanelUi();
         
         // Reset UI
         document.getElementById('testConfig').style.display = 'block';
@@ -2598,44 +2741,38 @@ class WebRTCTroubleshooting {
                 // Stats logging function for debugging
                 await this.updateStats(this.liveSendClient, this.liveRecvClient);
                 
-                // Calculate all 4 bitrates for live monitoring
-                const localVideoKeys = Object.keys(localVideoStats);
-                const localAudioKeys = Object.keys(localAudioStats);
+                // Calculate all 4 bitrates for live monitoring (local stats: flat or per-track map)
                 const remoteVideoKeys = Object.keys(remoteVideoStats);
                 const remoteAudioKeys = Object.keys(remoteAudioStats);
-                
-                // Local video bitrate - read directly from the flat object
-                let localVideoBitrate = Number(localVideoStats?.sendBitrate || 0) * 0.001;
-                
-                // Local audio bitrate - read directly from the flat object
-                let localAudioBitrate = Number(localAudioStats?.sendBitrate || 0) * 0.001;
-                
-                // Remote video bitrate
+                const firstLocalVideo = this.firstLocalTrackStatsObject(localVideoStats);
+                const firstLocalAudio = this.firstLocalTrackStatsObject(localAudioStats);
+
+                let localVideoBitrate = this.localSendBitrateKbpsFromStats(localVideoStats);
+                let localAudioBitrate = this.localSendBitrateKbpsFromStats(localAudioStats);
+
                 let remoteVideoBitrate = 0;
                 if (remoteVideoKeys.length > 0) {
                     remoteVideoBitrate = Number(remoteVideoStats[remoteVideoKeys[0]]?.receiveBitrate || remoteVideoStats[remoteVideoKeys[0]]?.bitrate || 0) * 0.001;
                 }
-                
-                // Remote audio bitrate
+
                 let remoteAudioBitrate = 0;
                 if (remoteAudioKeys.length > 0) {
                     remoteAudioBitrate = Number(remoteAudioStats[remoteAudioKeys[0]]?.receiveBitrate || remoteAudioStats[remoteAudioKeys[0]]?.bitrate || 0) * 0.001;
                 }
-                
-                // Ensure we have valid numbers
+
                 const validLocalVideoBitrate = isNaN(localVideoBitrate) || localVideoBitrate < 0 ? 0 : Math.max(0, localVideoBitrate);
                 const validLocalAudioBitrate = isNaN(localAudioBitrate) || localAudioBitrate < 0 ? 0 : Math.max(0, localAudioBitrate);
                 const validRemoteVideoBitrate = isNaN(remoteVideoBitrate) || remoteVideoBitrate < 0 ? 0 : Math.max(0, remoteVideoBitrate);
                 const validRemoteAudioBitrate = isNaN(remoteAudioBitrate) || remoteAudioBitrate < 0 ? 0 : Math.max(0, remoteAudioBitrate);
-                
-                // Calculate packet loss - both local and remote
-                const localVideoPacketLoss = Number(localVideoStats?.sendPacketsLost || localVideoStats?.currentPacketLossRate || 0);
-                const localAudioPacketLoss = Number(localAudioStats?.sendPacketsLost || localAudioStats?.currentPacketLossRate || 0);
-                
-                const remoteVideoPacketLoss = remoteVideoKeys.length > 0 ? 
-                    (remoteVideoStats[remoteVideoKeys[0]]?.receivePacketsLost || remoteVideoStats[remoteVideoKeys[0]]?.packetLossRate || 0) : 0;
-                const remoteAudioPacketLoss = remoteAudioKeys.length > 0 ? 
-                    (remoteAudioStats[remoteAudioKeys[0]]?.receivePacketsLost || remoteAudioStats[remoteAudioKeys[0]]?.packetLossRate || 0) : 0;
+
+                const localVideoPacketLoss = this.packetLossPercentFromLocalTrack(firstLocalVideo);
+                const localAudioPacketLoss = this.packetLossPercentFromLocalTrack(firstLocalAudio);
+                const remoteVideoPacketLoss = remoteVideoKeys.length
+                    ? this.packetLossPercentFromRemoteTrack(remoteVideoStats[remoteVideoKeys[0]])
+                    : 0;
+                const remoteAudioPacketLoss = remoteAudioKeys.length
+                    ? this.packetLossPercentFromRemoteTrack(remoteAudioStats[remoteAudioKeys[0]])
+                    : 0;
                 
                 // Debug the calculated values
                 console.log(`Live stats - Local Video: ${validLocalVideoBitrate.toFixed(1)}kbps, Local Audio: ${validLocalAudioBitrate.toFixed(1)}kbps, Remote Video: ${validRemoteVideoBitrate.toFixed(1)}kbps, Remote Audio: ${validRemoteAudioBitrate.toFixed(1)}kbps, Local Video PL: ${localVideoPacketLoss.toFixed(1)}%, Local Audio PL: ${localAudioPacketLoss.toFixed(1)}%, Remote Video PL: ${remoteVideoPacketLoss.toFixed(1)}%, Remote Audio PL: ${remoteAudioPacketLoss.toFixed(1)}%`);
@@ -2747,13 +2884,13 @@ class WebRTCTroubleshooting {
             const localAudioStats = await sendClient.getLocalAudioStats();
 
             console.log("📹 Local Video Stats:");
-            Object.entries(localVideoStats).forEach(([trackId, stats]) => {
-                console.log(`TrackID: ${trackId}`, stats);
+            this.localTrackStatsEntries(localVideoStats).forEach((stats, i) => {
+                console.log(`Local video entry ${i}:`, stats);
             });
 
             console.log("🎤 Local Audio Stats:");
-            Object.entries(localAudioStats).forEach(([trackId, stats]) => {
-                console.log(`TrackID: ${trackId}`, stats);
+            this.localTrackStatsEntries(localAudioStats).forEach((stats, i) => {
+                console.log(`Local audio entry ${i}:`, stats);
             });
 
             // Remote stats (by UID)
@@ -2788,6 +2925,70 @@ class WebRTCTroubleshooting {
         });
     }
     
+    clearMicVolumeMonitoring() {
+        if (this.micVolumeInterval) {
+            clearInterval(this.micVolumeInterval);
+            this.micVolumeInterval = null;
+        }
+    }
+    
+    teardownMicrophoneSkip() {
+        this.clearMicVolumeMonitoring();
+        if (this.micTimeout) {
+            clearTimeout(this.micTimeout);
+            this.micTimeout = null;
+        }
+        if (this.localAudioTrack) {
+            try {
+                this.localAudioTrack.close();
+            } catch (e) {
+                console.log('Error closing microphone track on skip:', e);
+            }
+            this.localAudioTrack = null;
+        }
+        this.microphoneTestRunning = false;
+        if (this.micResolve) {
+            const r = this.micResolve;
+            this.micResolve = null;
+            r();
+        }
+    }
+    
+    teardownSpeakerSkip() {
+        if (this.speakerTimeout) {
+            clearTimeout(this.speakerTimeout);
+            this.speakerTimeout = null;
+        }
+        if (this.audioContext) {
+            try {
+                this.audioContext.close();
+            } catch (e) {
+                console.log('Error closing audio context on skip:', e);
+            }
+            this.audioContext = null;
+        }
+        this.playSpeakerTestTone = null;
+        if (this.speakerResolve) {
+            const r = this.speakerResolve;
+            this.speakerResolve = null;
+            r();
+        }
+    }
+    
+    async finalizeNetworkSkipFromUser() {
+        this.stopNetworkMonitoring();
+        try {
+            await this.cleanupAgoraClients();
+        } catch (e) {
+            console.log('Network skip cleanup:', e);
+        }
+        if (this.networkResolve) {
+            const r = this.networkResolve;
+            this.networkResolve = null;
+            r();
+        }
+    }
+    
     skipTest(testName) {
         console.log(`Skipping ${testName}`);
         this.skippedTests.add(testName);
@@ -2803,53 +3004,27 @@ class WebRTCTroubleshooting {
             this.currentTestAbortController.abort();
         }
 
+        if (testName === 'microphone') {
+            this.teardownMicrophoneSkip();
+        } else if (testName === 'speaker') {
+            this.teardownSpeakerSkip();
+        } else if (testName === 'network') {
+            void this.finalizeNetworkSkipFromUser();
+        } else if (testName === 'resolution') {
+            this.isResolutionTesting = false;
+        }
+
         // Find the next test to run
         const testOrder = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
         const currentIndex = testOrder.indexOf(testName);
         const nextIndex = currentIndex + 1;
 
-        // If there are more tests, continue the sequence
         if (nextIndex < testOrder.length) {
-            // Update UI to show next step
             this.updateStep(nextIndex);
-            
-            // Continue the test sequence from the next test
-            // This will be handled by the main loop in runTestSequence
-        } else {
-            // No more tests, show the report
-            this.testSequenceRunning = false;
-            this.testSequenceAbortController = null;
-            this.showTestReport();
         }
+        // Final test: showTestReport runs once in runTestSequence's finally block.
     }
     
-    
-    stopTestOperations(testName) {
-        // Stop any ongoing operations for the specified test
-        if (testName === 'network') {
-            // Stop network test operations
-            if (this.networkInterval) {
-                clearInterval(this.networkInterval);
-                this.networkInterval = null;
-            }
-            // Leave Agora clients and channels as they are - they'll be cleaned up later
-        } else if (testName === 'resolution') {
-            // Stop resolution test operations
-            if (this.resolutionInterval) {
-                clearInterval(this.resolutionInterval);
-                this.resolutionInterval = null;
-            }
-            // Set flag to stop the resolution test loop
-            this.isResolutionTesting = false;
-        } else if (testName === 'speaker') {
-            // Speaker test timeout is already handled above
-        } else if (testName === 'microphone') {
-            // Microphone test timeout is already handled above
-        } else if (testName === 'network') {
-            this.stopNetworkMonitoring();
-        }
-        // Browser, microphone tests don't have ongoing operations to stop
-    }
     
     getResultElementId(testName) {
         const elementMap = {
@@ -2900,6 +3075,7 @@ class WebRTCTroubleshooting {
     }
     
     clearAllTestStatuses() {
+        this.resetSpeakerTestPanelUi();
         // Clear any "Test Skipped" statuses from previous runs
         // Only clear status messages, preserve the original HTML structure
         const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
