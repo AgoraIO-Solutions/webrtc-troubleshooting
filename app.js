@@ -1336,13 +1336,27 @@ class WebRTCTroubleshooting {
             if (bitrateData.length > 1) {
                 const lastBitrate = bitrateData[bitrateData.length - 1];
                 const lastPacketLoss = packetLossData[packetLossData.length - 1];
+                const bitrateSamples = bitrateData.slice(1);
+                const sampleCount = bitrateSamples.length;
+                let sumLocalVideo = 0;
+                let sumLocalAudio = 0;
+                for (const row of bitrateSamples) {
+                    sumLocalVideo += Number(row[1]) || 0;
+                    sumLocalAudio += Number(row[2]) || 0;
+                }
+                const avgLocalVideo = sampleCount ? sumLocalVideo / sampleCount : 0;
+                const avgLocalAudio = sampleCount ? sumLocalAudio / sampleCount : 0;
                 
                 let networkStatus = 'success';
                 let message = 'Network OK';
                 
-                if (lastBitrate[1] < 100 || lastBitrate[2] < 10) { // Low bitrates
+                // Mean send rate over the run; early ramp-up pulls averages down on short captures.
+                if (avgLocalVideo < 100 || avgLocalAudio < 10) {
                     networkStatus = 'warning';
-                    message = 'Low bitrate';
+                    message =
+                        'Average local send rates during this run were below this tool\'s reference range (see chart). ' +
+                        'Bitrate ramps up at call start, so short tests often skew low; little motion has the same effect — ' +
+                        'that is not on its own proof of a network or quality problem.';
                 }
                 
                 if (lastPacketLoss[1] > 5 || lastPacketLoss[2] > 5) { // High packet loss
@@ -2297,7 +2311,8 @@ class WebRTCTroubleshooting {
             sendingToken: this.token ? '***' : null, // Don't expose actual token
             receivingToken: this.receivingToken ? '***' : null, // Don't expose actual token
             cloudProxyEnabled: this.isCloudProxyEnabled,
-            proxyMode: this.proxyMode,
+            // Only meaningful when cloud proxy is on; avoid exporting a stale default (e.g. 3) when off.
+            ...(this.isCloudProxyEnabled ? { proxyMode: this.proxyMode } : {}),
             results: this.testResults,
             // Include all the detailed chart data that was collected
             chartData: {
