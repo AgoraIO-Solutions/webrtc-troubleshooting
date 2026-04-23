@@ -33,14 +33,8 @@ class WebRTCTroubleshooting {
             speaker: { status: 'pending', message: '' },
             resolution: { status: 'pending', message: '', results: [] },
             network: { status: 'pending', message: '', data: { bitrate: [], packetLoss: [] }, candidatePair: null },
-            lastmileProbe: { status: 'pending', message: '', data: { qualityScores: [] } }
+            lastmileProbe: { status: 'pending', message: '', data: {} }
         };
-        
-        // Last mile probe chart data
-        this.probeChartData = {
-            qualityScores: [['Time', 'Uplink Quality', 'Downlink Quality']]
-        };
-        this.probeClient = null;
         
         // Skip functionality
         this.skippedTests = new Set();
@@ -453,10 +447,7 @@ class WebRTCTroubleshooting {
             speaker: { status: 'pending', message: '' },
             resolution: { status: 'pending', message: '', results: [] },
             network: { status: 'pending', message: '', data: { bitrate: [], packetLoss: [] }, candidatePair: null },
-            lastmileProbe: { status: 'pending', message: '', data: { qualityScores: [] } }
-        };
-        this.probeChartData = {
-            qualityScores: [['Time', 'Uplink Quality', 'Downlink Quality']]
+            lastmileProbe: { status: 'pending', message: '', data: {} }
         };
     }
     
@@ -1427,113 +1418,78 @@ class WebRTCTroubleshooting {
         this.updateStep(5);
         this.showMessage('Running SDK-level last mile network probe...', 'info');
         
-        this.probeChartData = {
-            qualityScores: [['Time', 'Uplink Quality', 'Downlink Quality']]
+        const updateLiveDisplay = (field, value, cssClass) => {
+            const el = document.getElementById(field);
+            if (el) {
+                el.textContent = value;
+                if (cssClass) el.className = `probe-metric-value ${cssClass}`;
+            }
         };
         
+        updateLiveDisplay('probeRtt', '...', '');
+        updateLiveDisplay('probeJitter', '...', '');
+        updateLiveDisplay('probePacketLoss', '...', '');
+        updateLiveDisplay('probeQuality', '...', '');
+        const statusEl = document.getElementById('probeStatus');
+        if (statusEl) statusEl.textContent = 'Probing...';
+        
         try {
-            this.probeClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+            const probePromise = AgoraRTC.startLastmileProbeTest(this.appId);
             
-            if (this.isCloudProxyEnabled) {
-                await this.probeClient.startProxyServer(this.proxyMode);
-            }
-            
-            const probeUid = Math.floor(Math.random() * 100000) + 300000;
-            await this.probeClient.join(this.appId, this.channel + '_probe', this.token, probeUid);
-            
-            const qualityHistory = [];
-            const probeStartTime = Date.now();
-            
-            let firstProbeEvent = true;
-            const qualityHandler = (stats) => {
-                const elapsed = (Date.now() - probeStartTime) / 1000;
-                const uplinkScore = stats.uplinkNetworkQuality;
-                const downlinkScore = stats.downlinkNetworkQuality;
-                
-                if (firstProbeEvent && uplinkScore === 0 && downlinkScore === 0) {
-                    firstProbeEvent = false;
-                    console.log('Dropping initial probe event with 0/0 scores');
-                    return;
-                }
-                firstProbeEvent = false;
-                
-                qualityHistory.push({ time: elapsed, uplink: uplinkScore, downlink: downlinkScore });
-                this.probeChartData.qualityScores.push([elapsed, uplinkScore, downlinkScore]);
-                
-                const uplinkEl = document.getElementById('probeUplinkScore');
-                const downlinkEl = document.getElementById('probeDownlinkScore');
-                const uplinkDescEl = document.getElementById('probeUplinkDesc');
-                const downlinkDescEl = document.getElementById('probeDownlinkDesc');
-                
-                if (uplinkEl) uplinkEl.textContent = uplinkScore;
-                if (downlinkEl) downlinkEl.textContent = downlinkScore;
-                if (uplinkDescEl) uplinkDescEl.textContent = this.qualityScoreLabel(uplinkScore);
-                if (downlinkDescEl) downlinkDescEl.textContent = this.qualityScoreLabel(downlinkScore);
-                
-                if (uplinkEl) uplinkEl.className = `probe-score-value quality-${this.qualityScoreClass(uplinkScore)}`;
-                if (downlinkEl) downlinkEl.className = `probe-score-value quality-${this.qualityScoreClass(downlinkScore)}`;
-                
-                this.updateProbeChart();
-                
-                console.log(`Probe quality - Uplink: ${uplinkScore} (${this.qualityScoreLabel(uplinkScore)}), Downlink: ${downlinkScore} (${this.qualityScoreLabel(downlinkScore)}), Time: ${elapsed.toFixed(1)}s`);
+            this.probeAbortHandler = () => {
+                console.log('Last mile probe skipped by user');
             };
             
-            this.probeClient.on('network-quality', qualityHandler);
-            
-            await new Promise((resolve) => {
-                this.probeResolve = resolve;
-                this.probeTimeout = setTimeout(() => {
-                    console.log('Last mile probe timeout reached');
-                    resolve();
-                }, 12000);
-            });
-            
-            this.probeClient.off('network-quality', qualityHandler);
+            const result = await probePromise;
             
             if (this.skippedTests.has('lastmileProbe')) {
                 console.log('Last mile probe was skipped during execution');
-                await this.cleanupProbeClient();
                 return;
             }
             
-            await this.cleanupProbeClient();
+            console.log('Last mile probe result:', JSON.stringify(result));
             
-            if (qualityHistory.length === 0) {
+            const rtt = result.rtt ?? null;
+            const jitter = result.jitter ?? null;
+            const packetLossRate = result.packetLossRate ?? null;
+            const networkQuality = result.networkQuality ?? null;
+            const state = result.state;
+            
+            updateLiveDisplay('probeRtt', rtt !== null ? `${rtt} ms` : 'N/A', '');
+            updateLiveDisplay('probeJitter', jitter !== null ? `${jitter} ms` : 'N/A', '');
+            updateLiveDisplay('probePacketLoss', packetLossRate !== null ? `${(packetLossRate * 100).toFixed(1)}%` : 'N/A', '');
+            updateLiveDisplay('probeQuality', networkQuality !== null ? `${networkQuality} — ${this.qualityScoreLabel(networkQuality)}` : 'N/A',
+                networkQuality !== null ? `quality-${this.qualityScoreClass(networkQuality)}` : '');
+            if (statusEl) statusEl.textContent = state === 'complete' ? 'Probe Complete' : 'Probe Unavailable';
+            
+            if (state === 'unavailable') {
                 this.testResults.lastmileProbe = {
                     status: 'error',
-                    message: 'No quality data collected',
-                    data: { qualityScores: [] }
+                    message: 'Network probe unavailable — possible network disconnection',
+                    data: { state, rtt, jitter, packetLossRate, networkQuality }
                 };
+                this.updateStepResult('lastmileProbeResult', null, 'error');
                 return;
             }
             
-            const avgUplink = qualityHistory.reduce((s, q) => s + q.uplink, 0) / qualityHistory.length;
-            const avgDownlink = qualityHistory.reduce((s, q) => s + q.downlink, 0) / qualityHistory.length;
-            const lastUplink = qualityHistory[qualityHistory.length - 1].uplink;
-            const lastDownlink = qualityHistory[qualityHistory.length - 1].downlink;
-            
             let probeStatus = 'success';
-            let probeMessage = `Uplink: ${this.qualityScoreLabel(Math.round(avgUplink))} (avg ${avgUplink.toFixed(1)}), Downlink: ${this.qualityScoreLabel(Math.round(avgDownlink))} (avg ${avgDownlink.toFixed(1)})`;
+            let probeMessage = `Quality: ${this.qualityScoreLabel(networkQuality)}`;
+            if (rtt !== null) probeMessage += `, RTT: ${rtt}ms`;
+            if (jitter !== null) probeMessage += `, Jitter: ${jitter}ms`;
+            if (packetLossRate !== null) probeMessage += `, Loss: ${(packetLossRate * 100).toFixed(1)}%`;
             
-            if (avgUplink >= 4 || avgDownlink >= 4) {
+            if (networkQuality >= 4) {
                 probeStatus = 'error';
-                probeMessage = 'Poor network quality detected — ' + probeMessage;
-            } else if (avgUplink >= 3 || avgDownlink >= 3) {
+                probeMessage = 'Very poor network — ' + probeMessage;
+            } else if (networkQuality >= 3) {
                 probeStatus = 'warning';
-                probeMessage = 'Moderate network quality — ' + probeMessage;
+                probeMessage = 'Poor network — ' + probeMessage;
             }
             
             this.testResults.lastmileProbe = {
                 status: probeStatus,
                 message: probeMessage,
-                data: {
-                    qualityScores: qualityHistory,
-                    avgUplink,
-                    avgDownlink,
-                    lastUplink,
-                    lastDownlink,
-                    samples: qualityHistory.length
-                }
+                data: { state, rtt, jitter, packetLossRate, networkQuality }
             };
             
         } catch (error) {
@@ -1541,43 +1497,18 @@ class WebRTCTroubleshooting {
             
             if (this.skippedTests.has('lastmileProbe')) return;
             
-            await this.cleanupProbeClient();
-            
             this.testResults.lastmileProbe = {
                 status: 'error',
                 message: error.message,
-                data: { qualityScores: [] }
+                data: {}
             };
             this.updateStepResult('lastmileProbeResult', `❌ Last mile probe failed: ${error.message}`, 'error');
             throw error;
         }
     }
     
-    async cleanupProbeClient() {
-        if (this.probeTimeout) {
-            clearTimeout(this.probeTimeout);
-            this.probeTimeout = null;
-        }
-        if (this.probeClient) {
-            try {
-                await this.probeClient.leave();
-            } catch (e) {
-                console.log('Error leaving probe client:', e);
-            }
-            this.probeClient = null;
-        }
-    }
-    
     qualityScoreLabel(score) {
-        const labels = {
-            0: 'Unknown',
-            1: 'Excellent',
-            2: 'Good',
-            3: 'Poor',
-            4: 'Bad',
-            5: 'Very Bad',
-            6: 'Disconnected'
-        };
+        const labels = { 1: 'Excellent', 2: 'Good', 3: 'Poor', 4: 'Very Poor' };
         return labels[score] || 'Unknown';
     }
     
@@ -1586,33 +1517,6 @@ class WebRTCTroubleshooting {
         if (score <= 2) return 'good';
         if (score <= 3) return 'poor';
         return 'bad';
-    }
-    
-    updateProbeChart() {
-        try {
-            if (this.probeChartData.qualityScores.length > 1 && typeof google !== 'undefined') {
-                const data = google.visualization.arrayToDataTable(this.probeChartData.qualityScores);
-                const options = {
-                    title: 'Network Quality Score (1=Excellent, 6=Disconnected)',
-                    hAxis: { title: 'Time (seconds)' },
-                    vAxis: { title: 'Quality Score', minValue: 0, maxValue: 6, direction: -1 },
-                    series: {
-                        0: { color: '#00D4FF' },
-                        1: { color: '#8B5CF6' }
-                    },
-                    backgroundColor: 'transparent',
-                    legend: { position: 'top' }
-                };
-                
-                const chartEl = document.getElementById('probeQualityChart');
-                if (chartEl) {
-                    const chart = new google.visualization.LineChart(chartEl);
-                    chart.draw(data, options);
-                }
-            }
-        } catch (error) {
-            console.error('Probe chart update error:', error);
-        }
     }
     
     renderNetworkComparison(networkResult, probeResult) {
@@ -1624,9 +1528,9 @@ class WebRTCTroubleshooting {
             comparisonNotes = `
                 <div class="comparison-note warning">
                     <strong>Note:</strong> The two tests produced different verdicts. The Network Connection test uses actual media streams
-                    (publish + subscribe) to measure real throughput, while the Last Mile Probe uses the SDK's built-in quality scoring
-                    without media. Discrepancies can occur if bandwidth is sufficient for signaling but constrained under load, or if
-                    media ramp-up in a short test window skews bitrate averages.
+                    (publish + subscribe) to measure real throughput, while the Last Mile Probe uses the SDK's lightweight pre-call
+                    network quality test without media. Discrepancies can occur if bandwidth is sufficient for signaling but constrained
+                    under load.
                 </div>
             `;
         } else {
@@ -1636,6 +1540,8 @@ class WebRTCTroubleshooting {
                 </div>
             `;
         }
+        
+        const pd = probeResult.data || {};
         
         return `
             <div class="report-section comparison-section" data-details-key="comparison">
@@ -1660,22 +1566,33 @@ class WebRTCTroubleshooting {
                                         <div class="stat-item"><span class="stat-label">Video Send:</span><span class="stat-value">${(networkResult.data.bitrate[1] || 0).toFixed(1)} kbps</span></div>
                                         <div class="stat-item"><span class="stat-label">Audio Send:</span><span class="stat-value">${(networkResult.data.bitrate[2] || 0).toFixed(1)} kbps</span></div>
                                     ` : ''}
+                                    ${networkResult.data && networkResult.data.packetLoss ? `
+                                        <div class="stat-item"><span class="stat-label">Packet Loss (V):</span><span class="stat-value">Send ${(networkResult.data.packetLoss[1] || 0).toFixed(1)}% / Recv ${(networkResult.data.packetLoss[3] || 0).toFixed(1)}%</span></div>
+                                    ` : ''}
                                 </div>
                             </div>
                         </div>
                         <div class="comparison-card">
                             <div class="comparison-card-header">
-                                <h5>Last Mile Probe (SDK Quality)</h5>
+                                <h5>Last Mile Probe (SDK Pre-call)</h5>
                                 <span class="comparison-badge">${probeStatusIcon} ${probeResult.status}</span>
                             </div>
                             <div class="comparison-card-body">
-                                <p class="comparison-approach">Joins a channel and listens to the SDK's <code>network-quality</code> event for uplink/downlink scores (1-6) over ~12s.</p>
+                                <p class="comparison-approach">Uses <code>AgoraRTC.startLastmileProbeTest()</code> — a lightweight pre-call probe that measures RTT, jitter, packet loss, and overall quality without publishing media.</p>
                                 <div class="comparison-details">
-                                    <div class="stat-item"><span class="stat-label">Approach:</span><span class="stat-value">SDK quality scoring</span></div>
+                                    <div class="stat-item"><span class="stat-label">Approach:</span><span class="stat-value">SDK pre-call probe</span></div>
                                     <div class="stat-item"><span class="stat-label">Verdict:</span><span class="stat-value">${probeResult.message}</span></div>
-                                    ${probeResult.data ? `
-                                        <div class="stat-item"><span class="stat-label">Avg Uplink:</span><span class="stat-value">${(probeResult.data.avgUplink || 0).toFixed(1)} (${this.qualityScoreLabel(Math.round(probeResult.data.avgUplink || 0))})</span></div>
-                                        <div class="stat-item"><span class="stat-label">Avg Downlink:</span><span class="stat-value">${(probeResult.data.avgDownlink || 0).toFixed(1)} (${this.qualityScoreLabel(Math.round(probeResult.data.avgDownlink || 0))})</span></div>
+                                    ${pd.networkQuality != null ? `
+                                        <div class="stat-item"><span class="stat-label">Quality:</span><span class="stat-value">${pd.networkQuality} — ${this.qualityScoreLabel(pd.networkQuality)}</span></div>
+                                    ` : ''}
+                                    ${pd.rtt != null ? `
+                                        <div class="stat-item"><span class="stat-label">RTT:</span><span class="stat-value">${pd.rtt} ms</span></div>
+                                    ` : ''}
+                                    ${pd.jitter != null ? `
+                                        <div class="stat-item"><span class="stat-label">Jitter:</span><span class="stat-value">${pd.jitter} ms</span></div>
+                                    ` : ''}
+                                    ${pd.packetLossRate != null ? `
+                                        <div class="stat-item"><span class="stat-label">Packet Loss:</span><span class="stat-value">${(pd.packetLossRate * 100).toFixed(1)}%</span></div>
                                     ` : ''}
                                 </div>
                             </div>
@@ -2415,25 +2332,24 @@ class WebRTCTroubleshooting {
                 }
             }
             
-            if (key === 'lastmileProbe' && result.data && result.data.qualityScores && result.data.qualityScores.length > 0) {
+            if (key === 'lastmileProbe' && result.data && result.data.state) {
+                const pd = result.data;
                 detailContent += `
                     <div class="probe-report-section">
                         <div class="probe-stats">
-                            <div class="stat-item">
-                                <span class="stat-label">Avg Uplink Quality:</span>
-                                <span class="stat-value">${(result.data.avgUplink || 0).toFixed(1)} (${this.qualityScoreLabel(Math.round(result.data.avgUplink || 0))})</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Avg Downlink Quality:</span>
-                                <span class="stat-value">${(result.data.avgDownlink || 0).toFixed(1)} (${this.qualityScoreLabel(Math.round(result.data.avgDownlink || 0))})</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Samples Collected:</span>
-                                <span class="stat-value">${result.data.samples || 0}</span>
-                            </div>
-                        </div>
-                        <div class="chart-container-report">
-                            <div id="reportProbeChart"></div>
+                            ${pd.networkQuality != null ? `
+                                <div class="stat-item"><span class="stat-label">Network Quality:</span><span class="stat-value">${pd.networkQuality} — ${this.qualityScoreLabel(pd.networkQuality)}</span></div>
+                            ` : ''}
+                            ${pd.rtt != null ? `
+                                <div class="stat-item"><span class="stat-label">Round-Trip Time:</span><span class="stat-value">${pd.rtt} ms</span></div>
+                            ` : ''}
+                            ${pd.jitter != null ? `
+                                <div class="stat-item"><span class="stat-label">Jitter:</span><span class="stat-value">${pd.jitter} ms</span></div>
+                            ` : ''}
+                            ${pd.packetLossRate != null ? `
+                                <div class="stat-item"><span class="stat-label">Packet Loss:</span><span class="stat-value">${(pd.packetLossRate * 100).toFixed(1)}%</span></div>
+                            ` : ''}
+                            <div class="stat-item"><span class="stat-label">Probe Status:</span><span class="stat-value">${pd.state}</span></div>
                         </div>
                     </div>
                 `;
@@ -2486,10 +2402,8 @@ class WebRTCTroubleshooting {
             });
         }, 100);
         
-        // Initialize charts in the report if network or probe data exists
         const hasNetworkData = this.testResults.network && this.testResults.network.data;
-        const hasProbeData = this.probeChartData && this.probeChartData.qualityScores.length > 1;
-        if (hasNetworkData || hasProbeData) {
+        if (hasNetworkData) {
             setTimeout(() => {
                 this.initializeReportCharts();
             }, 100);
@@ -2529,30 +2443,6 @@ class WebRTCTroubleshooting {
             }
         }
         
-        if (this.probeChartData.qualityScores.length > 1) {
-            try {
-                const probeChartEl = document.getElementById('reportProbeChart');
-                if (probeChartEl) {
-                    const probeOptions = {
-                        title: 'Network Quality Score (1=Excellent, 6=Disconnected)',
-                        hAxis: { title: 'Time (s)' },
-                        vAxis: { title: 'Quality Score', minValue: 0, maxValue: 6, direction: -1 },
-                        series: {
-                            0: { color: '#00D4FF' },
-                            1: { color: '#8B5CF6' }
-                        },
-                        backgroundColor: 'transparent',
-                        legend: { position: 'top' },
-                        width: 400,
-                        height: 200
-                    };
-                    const reportProbeChart = new google.visualization.LineChart(probeChartEl);
-                    reportProbeChart.draw(google.visualization.arrayToDataTable(this.probeChartData.qualityScores), probeOptions);
-                }
-            } catch (error) {
-                console.error('Report probe chart initialization error:', error);
-            }
-        }
     }
     
     getTestName(key) {
@@ -2736,10 +2626,13 @@ class WebRTCTroubleshooting {
                     details += `\n  - Supported Resolutions: ${successCount}/${result.results.length}`;
                 }
                 
-                if (key === 'lastmileProbe' && result.data && result.data.avgUplink !== undefined) {
-                    details += `\n  - Avg Uplink Quality: ${result.data.avgUplink.toFixed(1)} (${this.qualityScoreLabel(Math.round(result.data.avgUplink))})`;
-                    details += `\n  - Avg Downlink Quality: ${result.data.avgDownlink.toFixed(1)} (${this.qualityScoreLabel(Math.round(result.data.avgDownlink))})`;
-                    details += `\n  - Samples: ${result.data.samples}`;
+                if (key === 'lastmileProbe' && result.data && result.data.state) {
+                    const pd = result.data;
+                    if (pd.networkQuality != null) details += `\n  - Quality: ${pd.networkQuality} (${this.qualityScoreLabel(pd.networkQuality)})`;
+                    if (pd.rtt != null) details += `\n  - RTT: ${pd.rtt} ms`;
+                    if (pd.jitter != null) details += `\n  - Jitter: ${pd.jitter} ms`;
+                    if (pd.packetLossRate != null) details += `\n  - Packet Loss: ${(pd.packetLossRate * 100).toFixed(1)}%`;
+                    details += `\n  - Probe State: ${pd.state}`;
                 }
                 
                 return details;
@@ -2824,13 +2717,6 @@ class WebRTCTroubleshooting {
             bitrate: [['Time', 'Local Video Bitrate', 'Local Audio Bitrate', 'Remote Video Bitrate', 'Remote Audio Bitrate']],
             packetLoss: [['Time', 'Local Video Packet Loss', 'Local Audio Packet Loss', 'Remote Video Packet Loss', 'Remote Audio Packet Loss']]
         };
-        this.probeChartData = {
-            qualityScores: [['Time', 'Uplink Quality', 'Downlink Quality']]
-        };
-        
-        // Cleanup probe client if still active
-        this.cleanupProbeClient();
-        
         this.showMessage('Test reset successfully', 'info');
     }
     
@@ -3386,11 +3272,7 @@ class WebRTCTroubleshooting {
         } else if (testName === 'resolution') {
             this.isResolutionTesting = false;
         } else if (testName === 'lastmileProbe') {
-            if (this.probeResolve) {
-                this.probeResolve();
-                this.probeResolve = null;
-            }
-            void this.cleanupProbeClient();
+            // startLastmileProbeTest is a single async call; skipping just sets the flag
         }
 
         // Find the next test to run

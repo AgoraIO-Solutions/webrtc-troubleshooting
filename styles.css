@@ -1574,25 +1574,25 @@ header {
 .probe-live-display {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 16px;
 }
 
-.probe-score-cards {
+.probe-metric-cards {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 15px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
 }
 
-.probe-score-card {
+.probe-metric-card {
     background: var(--dark-card);
     border-radius: 8px;
-    padding: 20px;
+    padding: 16px 12px;
     text-align: center;
     border: 1px solid var(--border-color);
 }
 
-.probe-score-label {
-    font-size: 12px;
+.probe-metric-label {
+    font-size: 11px;
     color: var(--text-secondary);
     font-weight: 600;
     text-transform: uppercase;
@@ -1600,34 +1600,34 @@ header {
     margin-bottom: 8px;
 }
 
-.probe-score-value {
-    font-size: 2.5rem;
+.probe-metric-value {
+    font-size: 1.4rem;
     font-weight: 700;
     color: var(--primary-color);
-    line-height: 1;
-    margin-bottom: 6px;
+    line-height: 1.2;
 }
 
-.probe-score-value.quality-excellent {
+.probe-metric-value.quality-excellent {
     color: var(--success-color);
 }
 
-.probe-score-value.quality-good {
+.probe-metric-value.quality-good {
     color: #34D399;
 }
 
-.probe-score-value.quality-poor {
+.probe-metric-value.quality-poor {
     color: var(--warning-color);
 }
 
-.probe-score-value.quality-bad {
+.probe-metric-value.quality-bad {
     color: var(--danger-color);
 }
 
-.probe-score-desc {
+.probe-status {
     font-size: 13px;
     color: var(--text-secondary);
     font-weight: 500;
+    text-align: center;
 }
 
 .probe-report-section {
@@ -1748,8 +1748,8 @@ header {
         grid-template-columns: 1fr;
     }
     
-    .probe-score-cards {
-        grid-template-columns: 1fr;
+    .probe-metric-cards {
+        grid-template-columns: 1fr 1fr;
     }
 }
 

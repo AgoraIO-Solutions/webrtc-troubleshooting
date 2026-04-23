@@ -211,25 +211,29 @@
                     <div class="step-panel" id="step5">
                         <div class="step-info">
                             <h3>Last Mile Network Probe</h3>
-                            <p>SDK-level network quality probe — measures uplink and downlink quality scores without publishing media...</p>
+                            <p>SDK pre-call network probe — measures RTT, jitter, packet loss, and overall quality without publishing media...</p>
                         </div>
                         <div class="step-result" id="lastmileProbeResult">
                             <div class="probe-live-display">
-                                <div class="probe-score-cards">
-                                    <div class="probe-score-card">
-                                        <div class="probe-score-label">Uplink Quality</div>
-                                        <div class="probe-score-value" id="probeUplinkScore">--</div>
-                                        <div class="probe-score-desc" id="probeUplinkDesc">Waiting...</div>
+                                <div class="probe-metric-cards">
+                                    <div class="probe-metric-card">
+                                        <div class="probe-metric-label">RTT</div>
+                                        <div class="probe-metric-value" id="probeRtt">--</div>
                                     </div>
-                                    <div class="probe-score-card">
-                                        <div class="probe-score-label">Downlink Quality</div>
-                                        <div class="probe-score-value" id="probeDownlinkScore">--</div>
-                                        <div class="probe-score-desc" id="probeDownlinkDesc">Waiting...</div>
+                                    <div class="probe-metric-card">
+                                        <div class="probe-metric-label">Jitter</div>
+                                        <div class="probe-metric-value" id="probeJitter">--</div>
+                                    </div>
+                                    <div class="probe-metric-card">
+                                        <div class="probe-metric-label">Packet Loss</div>
+                                        <div class="probe-metric-value" id="probePacketLoss">--</div>
+                                    </div>
+                                    <div class="probe-metric-card">
+                                        <div class="probe-metric-label">Quality</div>
+                                        <div class="probe-metric-value" id="probeQuality">--</div>
                                     </div>
                                 </div>
-                                <div class="chart-container">
-                                    <div id="probeQualityChart"></div>
-                                </div>
+                                <div class="probe-status" id="probeStatus">Waiting...</div>
                             </div>
                         </div>
                         <div class="step-actions">
