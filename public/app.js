@@ -1493,7 +1493,15 @@ class WebRTCTroubleshooting {
                 throw new Error('App ID not available for probe test');
             }
             
-            const result = await AgoraRTC.startLastmileProbeTest(appId);
+            const probeChannel = `probe_${this.channel || 'test'}_${Date.now()}`;
+            const probeUid = Math.floor(Math.random() * 100000) + 300000;
+            let probeToken = null;
+            if (this.tokenServiceEnabled) {
+                const data = await this.requestRtcTokensFromServer(probeChannel, probeUid, probeUid);
+                probeToken = data.sendingToken;
+            }
+            
+            const result = await AgoraRTC.startLastmileProbeTest(appId, probeChannel, probeToken, probeUid);
             
             if (this.skippedTests.has('lastmileProbe')) {
                 console.log('Last mile probe was skipped during execution');
