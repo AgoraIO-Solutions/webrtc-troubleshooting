@@ -1788,16 +1788,16 @@ header {
 }
 
 .probe-metric-card {
-    background: var(--card-bg, #f8f9fa);
+    background: var(--dark-card);
     border-radius: 12px;
     padding: 16px 12px;
     text-align: center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    border: 1px solid var(--border-color);
 }
 
 .probe-metric-label {
     font-size: 0.8rem;
-    color: #666;
+    color: var(--text-secondary);
     margin-bottom: 8px;
     font-weight: 600;
     text-transform: uppercase;
@@ -1808,16 +1808,17 @@ header {
     font-size: 1.4rem;
     font-weight: 700;
     line-height: 1.2;
+    color: var(--primary-color);
 }
 
-.probe-metric-value.quality-excellent { color: #4CAF50; }
-.probe-metric-value.quality-good { color: #8BC34A; }
-.probe-metric-value.quality-poor { color: #FF9800; }
-.probe-metric-value.quality-bad { color: #f44336; }
+.probe-metric-value.quality-excellent { color: var(--success-color); }
+.probe-metric-value.quality-good { color: #34D399; }
+.probe-metric-value.quality-poor { color: var(--warning-color); }
+.probe-metric-value.quality-bad { color: var(--danger-color); }
 
 .probe-status {
     font-size: 0.85rem;
-    color: #888;
+    color: var(--text-secondary);
     text-align: center;
     font-weight: 500;
 }
@@ -1839,8 +1840,9 @@ header {
 /* Network Comparison Styles */
 .comparison-section {
     margin-top: 20px;
-    border: 2px solid #e0e0e0;
+    border: 2px solid var(--primary-purple);
     border-radius: 12px;
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.1);
 }
 
 .comparison-grid {
@@ -1851,7 +1853,8 @@ header {
 }
 
 .comparison-card {
-    border: 1px solid #e0e0e0;
+    background: var(--dark-surface);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
 }
@@ -1861,16 +1864,22 @@ header {
     justify-content: space-between;
     align-items: center;
     padding: 12px 16px;
-    background: #f5f5f5;
-    border-bottom: 1px solid #e0e0e0;
+    background: var(--dark-bg);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.comparison-card-header strong {
+    color: var(--primary-color);
 }
 
 .comparison-badge {
     font-size: 0.8rem;
     padding: 3px 8px;
     border-radius: 12px;
-    background: #fff;
-    border: 1px solid #ddd;
+    background: var(--dark-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    text-transform: capitalize;
 }
 
 .comparison-card-body {
@@ -1879,9 +1888,18 @@ header {
 
 .comparison-approach {
     font-size: 0.85rem;
-    color: #666;
+    color: var(--text-secondary);
+    font-style: italic;
     margin-bottom: 12px;
     line-height: 1.5;
+}
+
+.comparison-approach code {
+    background: var(--dark-bg);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--primary-cyan);
 }
 
 .comparison-details .stat-item {
@@ -1893,18 +1911,19 @@ header {
     border-radius: 8px;
     font-size: 0.9rem;
     line-height: 1.5;
+    margin-top: 5px;
 }
 
 .comparison-note.consistent {
-    background: #e8f5e9;
-    border: 1px solid #c8e6c9;
-    color: #2e7d32;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    color: var(--success-color);
 }
 
 .comparison-note.inconsistent {
-    background: #fff3e0;
-    border: 1px solid #ffe0b2;
-    color: #e65100;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    color: var(--warning-color);
 }
 
 @media (max-width: 768px) {
