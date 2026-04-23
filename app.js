@@ -32,8 +32,15 @@ class WebRTCTroubleshooting {
             microphone: { status: 'pending', message: '' },
             speaker: { status: 'pending', message: '' },
             resolution: { status: 'pending', message: '', results: [] },
-            network: { status: 'pending', message: '', data: { bitrate: [], packetLoss: [] }, candidatePair: null }
+            network: { status: 'pending', message: '', data: { bitrate: [], packetLoss: [] }, candidatePair: null },
+            lastmileProbe: { status: 'pending', message: '', data: { qualityScores: [] } }
         };
+        
+        // Last mile probe chart data
+        this.probeChartData = {
+            qualityScores: [['Time', 'Uplink Quality', 'Downlink Quality']]
+        };
+        this.probeClient = null;
         
         // Skip functionality
         this.skippedTests = new Set();
@@ -277,6 +284,7 @@ class WebRTCTroubleshooting {
         document.getElementById('skipSpeakerBtn').addEventListener('click', () => this.skipTest('speaker'));
         document.getElementById('skipResolutionBtn').addEventListener('click', () => this.skipTest('resolution'));
         document.getElementById('skipNetworkBtn').addEventListener('click', () => this.skipTest('network'));
+        document.getElementById('skipLastmileProbeBtn').addEventListener('click', () => this.skipTest('lastmileProbe'));
     }
     
     generateChannelName() {
@@ -372,7 +380,7 @@ class WebRTCTroubleshooting {
     }
     
     async runTestSequence(startIndex = 0) {
-        const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
+        const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network', 'lastmileProbe'];
 
         try {
             for (let i = startIndex; i < testNames.length; i++) {
@@ -413,6 +421,9 @@ class WebRTCTroubleshooting {
                         case 'network':
                             await this.runNetworkCheck();
                             break;
+                        case 'lastmileProbe':
+                            await this.runLastmileProbeCheck();
+                            break;
                     }
                 } catch (err) {
                     // Check if it was cancelled due to skip
@@ -441,7 +452,11 @@ class WebRTCTroubleshooting {
             microphone: { status: 'pending', message: '' },
             speaker: { status: 'pending', message: '' },
             resolution: { status: 'pending', message: '', results: [] },
-            network: { status: 'pending', message: '', data: { bitrate: [], packetLoss: [] }, candidatePair: null }
+            network: { status: 'pending', message: '', data: { bitrate: [], packetLoss: [] }, candidatePair: null },
+            lastmileProbe: { status: 'pending', message: '', data: { qualityScores: [] } }
+        };
+        this.probeChartData = {
+            qualityScores: [['Time', 'Uplink Quality', 'Downlink Quality']]
         };
     }
     
@@ -1401,6 +1416,277 @@ class WebRTCTroubleshooting {
         }
     }
     
+    async runLastmileProbeCheck() {
+        console.log('=== LAST MILE PROBE TEST STARTING ===');
+        
+        if (this.skippedTests.has('lastmileProbe')) {
+            console.log('Last mile probe test was skipped, not running');
+            return;
+        }
+        
+        this.updateStep(5);
+        this.showMessage('Running SDK-level last mile network probe...', 'info');
+        
+        this.probeChartData = {
+            qualityScores: [['Time', 'Uplink Quality', 'Downlink Quality']]
+        };
+        
+        try {
+            this.probeClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+            
+            if (this.isCloudProxyEnabled) {
+                await this.probeClient.startProxyServer(this.proxyMode);
+            }
+            
+            const probeUid = Math.floor(Math.random() * 100000) + 300000;
+            await this.probeClient.join(this.appId, this.channel + '_probe', this.token, probeUid);
+            
+            const qualityHistory = [];
+            const probeStartTime = Date.now();
+            
+            let firstProbeEvent = true;
+            const qualityHandler = (stats) => {
+                const elapsed = (Date.now() - probeStartTime) / 1000;
+                const uplinkScore = stats.uplinkNetworkQuality;
+                const downlinkScore = stats.downlinkNetworkQuality;
+                
+                if (firstProbeEvent && uplinkScore === 0 && downlinkScore === 0) {
+                    firstProbeEvent = false;
+                    console.log('Dropping initial probe event with 0/0 scores');
+                    return;
+                }
+                firstProbeEvent = false;
+                
+                qualityHistory.push({ time: elapsed, uplink: uplinkScore, downlink: downlinkScore });
+                this.probeChartData.qualityScores.push([elapsed, uplinkScore, downlinkScore]);
+                
+                const uplinkEl = document.getElementById('probeUplinkScore');
+                const downlinkEl = document.getElementById('probeDownlinkScore');
+                const uplinkDescEl = document.getElementById('probeUplinkDesc');
+                const downlinkDescEl = document.getElementById('probeDownlinkDesc');
+                
+                if (uplinkEl) uplinkEl.textContent = uplinkScore;
+                if (downlinkEl) downlinkEl.textContent = downlinkScore;
+                if (uplinkDescEl) uplinkDescEl.textContent = this.qualityScoreLabel(uplinkScore);
+                if (downlinkDescEl) downlinkDescEl.textContent = this.qualityScoreLabel(downlinkScore);
+                
+                if (uplinkEl) uplinkEl.className = `probe-score-value quality-${this.qualityScoreClass(uplinkScore)}`;
+                if (downlinkEl) downlinkEl.className = `probe-score-value quality-${this.qualityScoreClass(downlinkScore)}`;
+                
+                this.updateProbeChart();
+                
+                console.log(`Probe quality - Uplink: ${uplinkScore} (${this.qualityScoreLabel(uplinkScore)}), Downlink: ${downlinkScore} (${this.qualityScoreLabel(downlinkScore)}), Time: ${elapsed.toFixed(1)}s`);
+            };
+            
+            this.probeClient.on('network-quality', qualityHandler);
+            
+            await new Promise((resolve) => {
+                this.probeResolve = resolve;
+                this.probeTimeout = setTimeout(() => {
+                    console.log('Last mile probe timeout reached');
+                    resolve();
+                }, 12000);
+            });
+            
+            this.probeClient.off('network-quality', qualityHandler);
+            
+            if (this.skippedTests.has('lastmileProbe')) {
+                console.log('Last mile probe was skipped during execution');
+                await this.cleanupProbeClient();
+                return;
+            }
+            
+            await this.cleanupProbeClient();
+            
+            if (qualityHistory.length === 0) {
+                this.testResults.lastmileProbe = {
+                    status: 'error',
+                    message: 'No quality data collected',
+                    data: { qualityScores: [] }
+                };
+                return;
+            }
+            
+            const avgUplink = qualityHistory.reduce((s, q) => s + q.uplink, 0) / qualityHistory.length;
+            const avgDownlink = qualityHistory.reduce((s, q) => s + q.downlink, 0) / qualityHistory.length;
+            const lastUplink = qualityHistory[qualityHistory.length - 1].uplink;
+            const lastDownlink = qualityHistory[qualityHistory.length - 1].downlink;
+            
+            let probeStatus = 'success';
+            let probeMessage = `Uplink: ${this.qualityScoreLabel(Math.round(avgUplink))} (avg ${avgUplink.toFixed(1)}), Downlink: ${this.qualityScoreLabel(Math.round(avgDownlink))} (avg ${avgDownlink.toFixed(1)})`;
+            
+            if (avgUplink >= 4 || avgDownlink >= 4) {
+                probeStatus = 'error';
+                probeMessage = 'Poor network quality detected — ' + probeMessage;
+            } else if (avgUplink >= 3 || avgDownlink >= 3) {
+                probeStatus = 'warning';
+                probeMessage = 'Moderate network quality — ' + probeMessage;
+            }
+            
+            this.testResults.lastmileProbe = {
+                status: probeStatus,
+                message: probeMessage,
+                data: {
+                    qualityScores: qualityHistory,
+                    avgUplink,
+                    avgDownlink,
+                    lastUplink,
+                    lastDownlink,
+                    samples: qualityHistory.length
+                }
+            };
+            
+        } catch (error) {
+            console.error('Last mile probe failed:', error);
+            
+            if (this.skippedTests.has('lastmileProbe')) return;
+            
+            await this.cleanupProbeClient();
+            
+            this.testResults.lastmileProbe = {
+                status: 'error',
+                message: error.message,
+                data: { qualityScores: [] }
+            };
+            this.updateStepResult('lastmileProbeResult', `❌ Last mile probe failed: ${error.message}`, 'error');
+            throw error;
+        }
+    }
+    
+    async cleanupProbeClient() {
+        if (this.probeTimeout) {
+            clearTimeout(this.probeTimeout);
+            this.probeTimeout = null;
+        }
+        if (this.probeClient) {
+            try {
+                await this.probeClient.leave();
+            } catch (e) {
+                console.log('Error leaving probe client:', e);
+            }
+            this.probeClient = null;
+        }
+    }
+    
+    qualityScoreLabel(score) {
+        const labels = {
+            0: 'Unknown',
+            1: 'Excellent',
+            2: 'Good',
+            3: 'Poor',
+            4: 'Bad',
+            5: 'Very Bad',
+            6: 'Disconnected'
+        };
+        return labels[score] || 'Unknown';
+    }
+    
+    qualityScoreClass(score) {
+        if (score <= 1) return 'excellent';
+        if (score <= 2) return 'good';
+        if (score <= 3) return 'poor';
+        return 'bad';
+    }
+    
+    updateProbeChart() {
+        try {
+            if (this.probeChartData.qualityScores.length > 1 && typeof google !== 'undefined') {
+                const data = google.visualization.arrayToDataTable(this.probeChartData.qualityScores);
+                const options = {
+                    title: 'Network Quality Score (1=Excellent, 6=Disconnected)',
+                    hAxis: { title: 'Time (seconds)' },
+                    vAxis: { title: 'Quality Score', minValue: 0, maxValue: 6, direction: -1 },
+                    series: {
+                        0: { color: '#00D4FF' },
+                        1: { color: '#8B5CF6' }
+                    },
+                    backgroundColor: 'transparent',
+                    legend: { position: 'top' }
+                };
+                
+                const chartEl = document.getElementById('probeQualityChart');
+                if (chartEl) {
+                    const chart = new google.visualization.LineChart(chartEl);
+                    chart.draw(data, options);
+                }
+            }
+        } catch (error) {
+            console.error('Probe chart update error:', error);
+        }
+    }
+    
+    renderNetworkComparison(networkResult, probeResult) {
+        const networkStatusIcon = networkResult.status === 'success' ? '✅' : networkResult.status === 'warning' ? '⚠️' : '❌';
+        const probeStatusIcon = probeResult.status === 'success' ? '✅' : probeResult.status === 'warning' ? '⚠️' : '❌';
+        
+        let comparisonNotes = '';
+        if (networkResult.status !== probeResult.status) {
+            comparisonNotes = `
+                <div class="comparison-note warning">
+                    <strong>Note:</strong> The two tests produced different verdicts. The Network Connection test uses actual media streams
+                    (publish + subscribe) to measure real throughput, while the Last Mile Probe uses the SDK's built-in quality scoring
+                    without media. Discrepancies can occur if bandwidth is sufficient for signaling but constrained under load, or if
+                    media ramp-up in a short test window skews bitrate averages.
+                </div>
+            `;
+        } else {
+            comparisonNotes = `
+                <div class="comparison-note success">
+                    Both tests agree on network quality. The SDK-level probe and the full media stream test produced consistent results.
+                </div>
+            `;
+        }
+        
+        return `
+            <div class="report-section comparison-section" data-details-key="comparison">
+                <h4 class="collapsible-heading">
+                    Network Test Comparison
+                    <span class="collapse-arrow">▼</span>
+                </h4>
+                <div class="test-content">
+                    <p class="test-message">Side-by-side comparison of the two network testing approaches</p>
+                    <div class="comparison-grid">
+                        <div class="comparison-card">
+                            <div class="comparison-card-header">
+                                <h5>Network Connection (Full Media)</h5>
+                                <span class="comparison-badge">${networkStatusIcon} ${networkResult.status}</span>
+                            </div>
+                            <div class="comparison-card-body">
+                                <p class="comparison-approach">Creates two clients, publishes audio+video tracks, subscribes, and measures real bitrate/packet loss over ~10s.</p>
+                                <div class="comparison-details">
+                                    <div class="stat-item"><span class="stat-label">Approach:</span><span class="stat-value">Full media stream</span></div>
+                                    <div class="stat-item"><span class="stat-label">Verdict:</span><span class="stat-value">${networkResult.message}</span></div>
+                                    ${networkResult.data && networkResult.data.bitrate ? `
+                                        <div class="stat-item"><span class="stat-label">Video Send:</span><span class="stat-value">${(networkResult.data.bitrate[1] || 0).toFixed(1)} kbps</span></div>
+                                        <div class="stat-item"><span class="stat-label">Audio Send:</span><span class="stat-value">${(networkResult.data.bitrate[2] || 0).toFixed(1)} kbps</span></div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="comparison-card">
+                            <div class="comparison-card-header">
+                                <h5>Last Mile Probe (SDK Quality)</h5>
+                                <span class="comparison-badge">${probeStatusIcon} ${probeResult.status}</span>
+                            </div>
+                            <div class="comparison-card-body">
+                                <p class="comparison-approach">Joins a channel and listens to the SDK's <code>network-quality</code> event for uplink/downlink scores (1-6) over ~12s.</p>
+                                <div class="comparison-details">
+                                    <div class="stat-item"><span class="stat-label">Approach:</span><span class="stat-value">SDK quality scoring</span></div>
+                                    <div class="stat-item"><span class="stat-label">Verdict:</span><span class="stat-value">${probeResult.message}</span></div>
+                                    ${probeResult.data ? `
+                                        <div class="stat-item"><span class="stat-label">Avg Uplink:</span><span class="stat-value">${(probeResult.data.avgUplink || 0).toFixed(1)} (${this.qualityScoreLabel(Math.round(probeResult.data.avgUplink || 0))})</span></div>
+                                        <div class="stat-item"><span class="stat-label">Avg Downlink:</span><span class="stat-value">${(probeResult.data.avgDownlink || 0).toFixed(1)} (${this.qualityScoreLabel(Math.round(probeResult.data.avgDownlink || 0))})</span></div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    ${comparisonNotes}
+                </div>
+            </div>
+        `;
+    }
+    
     async initializeAgoraClients() {
         // Check if clients already exist and are connected
         if (this.sendClient && this.recvClient) {
@@ -1935,7 +2221,7 @@ class WebRTCTroubleshooting {
         
         
         // Create detailed report
-        const detailsContent = Object.entries(this.testResults).map(([key, result]) => {
+        let detailsContent = Object.entries(this.testResults).map(([key, result]) => {
             let detailContent = `<div class="report-section ${result.status === 'skipped' ? 'skipped' : ''}" data-details-key="${key}">
                 <h4 class="collapsible-heading">
                     ${this.getTestName(key)}
@@ -2025,7 +2311,7 @@ class WebRTCTroubleshooting {
                 `;
                 
                 // Add candidate pair information if available
-                if (result.candidatePair) {
+                if (key === 'network' && result.candidatePair) {
                     const candidateData = result.candidatePair;
                     detailContent += `
                         <div class="candidate-pair-section">
@@ -2129,9 +2415,41 @@ class WebRTCTroubleshooting {
                 }
             }
             
+            if (key === 'lastmileProbe' && result.data && result.data.qualityScores && result.data.qualityScores.length > 0) {
+                detailContent += `
+                    <div class="probe-report-section">
+                        <div class="probe-stats">
+                            <div class="stat-item">
+                                <span class="stat-label">Avg Uplink Quality:</span>
+                                <span class="stat-value">${(result.data.avgUplink || 0).toFixed(1)} (${this.qualityScoreLabel(Math.round(result.data.avgUplink || 0))})</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Avg Downlink Quality:</span>
+                                <span class="stat-value">${(result.data.avgDownlink || 0).toFixed(1)} (${this.qualityScoreLabel(Math.round(result.data.avgDownlink || 0))})</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Samples Collected:</span>
+                                <span class="stat-value">${result.data.samples || 0}</span>
+                            </div>
+                        </div>
+                        <div class="chart-container-report">
+                            <div id="reportProbeChart"></div>
+                        </div>
+                    </div>
+                `;
+            }
+            
             detailContent += '</div></div>';
             return detailContent;
         }).join('');
+        
+        // Add comparison section if both network and lastmileProbe have data
+        const networkResult = this.testResults.network;
+        const probeResult = this.testResults.lastmileProbe;
+        if (networkResult.status !== 'pending' && networkResult.status !== 'skipped' &&
+            probeResult.status !== 'pending' && probeResult.status !== 'skipped') {
+            detailsContent += this.renderNetworkComparison(networkResult, probeResult);
+        }
         
         details.innerHTML = detailsContent;
         
@@ -2168,8 +2486,10 @@ class WebRTCTroubleshooting {
             });
         }, 100);
         
-        // Initialize charts in the report if network data exists
-        if (this.testResults.network && this.testResults.network.data) {
+        // Initialize charts in the report if network or probe data exists
+        const hasNetworkData = this.testResults.network && this.testResults.network.data;
+        const hasProbeData = this.probeChartData && this.probeChartData.qualityScores.length > 1;
+        if (hasNetworkData || hasProbeData) {
             setTimeout(() => {
                 this.initializeReportCharts();
             }, 100);
@@ -2208,6 +2528,31 @@ class WebRTCTroubleshooting {
                 console.error('Report chart initialization error:', error);
             }
         }
+        
+        if (this.probeChartData.qualityScores.length > 1) {
+            try {
+                const probeChartEl = document.getElementById('reportProbeChart');
+                if (probeChartEl) {
+                    const probeOptions = {
+                        title: 'Network Quality Score (1=Excellent, 6=Disconnected)',
+                        hAxis: { title: 'Time (s)' },
+                        vAxis: { title: 'Quality Score', minValue: 0, maxValue: 6, direction: -1 },
+                        series: {
+                            0: { color: '#00D4FF' },
+                            1: { color: '#8B5CF6' }
+                        },
+                        backgroundColor: 'transparent',
+                        legend: { position: 'top' },
+                        width: 400,
+                        height: 200
+                    };
+                    const reportProbeChart = new google.visualization.LineChart(probeChartEl);
+                    reportProbeChart.draw(google.visualization.arrayToDataTable(this.probeChartData.qualityScores), probeOptions);
+                }
+            } catch (error) {
+                console.error('Report probe chart initialization error:', error);
+            }
+        }
     }
     
     getTestName(key) {
@@ -2216,7 +2561,8 @@ class WebRTCTroubleshooting {
             microphone: 'Microphone',
             speaker: 'Speaker',
             resolution: 'Video Resolution',
-            network: 'Network Connection'
+            network: 'Network Connection',
+            lastmileProbe: 'Last Mile Probe'
         };
         return names[key] || key;
     }
@@ -2257,13 +2603,13 @@ class WebRTCTroubleshooting {
         }
         
         this.currentStep++;
-        if (this.currentStep < 5) {
+        if (this.currentStep < 6) {
             this.updateStep(this.currentStep);
         }
     }
     
     getCurrentTestName() {
-        const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
+        const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network', 'lastmileProbe'];
         return testNames[this.currentStep] || null;
     }
     
@@ -2390,6 +2736,12 @@ class WebRTCTroubleshooting {
                     details += `\n  - Supported Resolutions: ${successCount}/${result.results.length}`;
                 }
                 
+                if (key === 'lastmileProbe' && result.data && result.data.avgUplink !== undefined) {
+                    details += `\n  - Avg Uplink Quality: ${result.data.avgUplink.toFixed(1)} (${this.qualityScoreLabel(Math.round(result.data.avgUplink))})`;
+                    details += `\n  - Avg Downlink Quality: ${result.data.avgDownlink.toFixed(1)} (${this.qualityScoreLabel(Math.round(result.data.avgDownlink))})`;
+                    details += `\n  - Samples: ${result.data.samples}`;
+                }
+                
                 return details;
             }).join('\n\n');
         
@@ -2472,6 +2824,12 @@ class WebRTCTroubleshooting {
             bitrate: [['Time', 'Local Video Bitrate', 'Local Audio Bitrate', 'Remote Video Bitrate', 'Remote Audio Bitrate']],
             packetLoss: [['Time', 'Local Video Packet Loss', 'Local Audio Packet Loss', 'Remote Video Packet Loss', 'Remote Audio Packet Loss']]
         };
+        this.probeChartData = {
+            qualityScores: [['Time', 'Uplink Quality', 'Downlink Quality']]
+        };
+        
+        // Cleanup probe client if still active
+        this.cleanupProbeClient();
         
         this.showMessage('Test reset successfully', 'info');
     }
@@ -3027,10 +3385,16 @@ class WebRTCTroubleshooting {
             void this.finalizeNetworkSkipFromUser();
         } else if (testName === 'resolution') {
             this.isResolutionTesting = false;
+        } else if (testName === 'lastmileProbe') {
+            if (this.probeResolve) {
+                this.probeResolve();
+                this.probeResolve = null;
+            }
+            void this.cleanupProbeClient();
         }
 
         // Find the next test to run
-        const testOrder = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
+        const testOrder = ['browser', 'microphone', 'speaker', 'resolution', 'network', 'lastmileProbe'];
         const currentIndex = testOrder.indexOf(testName);
         const nextIndex = currentIndex + 1;
 
@@ -3047,7 +3411,8 @@ class WebRTCTroubleshooting {
             'microphone': 'micResult',
             'speaker': 'speakerResult',
             'resolution': 'resolutionResult',
-            'network': 'networkResult'
+            'network': 'networkResult',
+            'lastmileProbe': 'lastmileProbeResult'
         };
         return elementMap[testName];
     }
@@ -3058,18 +3423,19 @@ class WebRTCTroubleshooting {
             'microphone': 'skipMicBtn',
             'speaker': 'skipSpeakerBtn',
             'resolution': 'skipResolutionBtn',
-            'network': 'skipNetworkBtn'
+            'network': 'skipNetworkBtn',
+            'lastmileProbe': 'skipLastmileProbeBtn'
         };
         return buttonMap[testName];
     }
     
     showSkipButtons() {
-        // Show all skip buttons
         document.getElementById('skipBrowserBtn').style.display = 'inline-block';
         document.getElementById('skipMicBtn').style.display = 'inline-block';
         document.getElementById('skipSpeakerBtn').style.display = 'inline-block';
         document.getElementById('skipResolutionBtn').style.display = 'inline-block';
         document.getElementById('skipNetworkBtn').style.display = 'inline-block';
+        document.getElementById('skipLastmileProbeBtn').style.display = 'inline-block';
     }
     
     hideSkipButton(testName) {
@@ -3081,19 +3447,19 @@ class WebRTCTroubleshooting {
     }
     
     hideAllSkipButtons() {
-        // Hide all skip buttons initially
         document.getElementById('skipBrowserBtn').style.display = 'none';
         document.getElementById('skipMicBtn').style.display = 'none';
         document.getElementById('skipSpeakerBtn').style.display = 'none';
         document.getElementById('skipResolutionBtn').style.display = 'none';
         document.getElementById('skipNetworkBtn').style.display = 'none';
+        document.getElementById('skipLastmileProbeBtn').style.display = 'none';
     }
     
     clearAllTestStatuses() {
         this.resetSpeakerTestPanelUi();
         // Clear any "Test Skipped" statuses from previous runs
         // Only clear status messages, preserve the original HTML structure
-        const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network'];
+        const testNames = ['browser', 'microphone', 'speaker', 'resolution', 'network', 'lastmileProbe'];
         testNames.forEach(testName => {
             const resultElementId = this.getResultElementId(testName);
             const resultElement = document.getElementById(resultElementId);

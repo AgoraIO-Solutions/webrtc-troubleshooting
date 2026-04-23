@@ -102,6 +102,10 @@
                         <div class="step-number">5</div>
                         <div class="step-title">Network Check</div>
                     </div>
+                    <div class="step" data-step="5">
+                        <div class="step-number">6</div>
+                        <div class="step-title">Last Mile Probe</div>
+                    </div>
                 </div>
 
                 <!-- Step Content -->
@@ -200,6 +204,36 @@
                         </div>
                         <div class="step-actions">
                             <button class="btn-skip" id="skipNetworkBtn">⏭️ Skip Test</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: Last Mile Probe -->
+                    <div class="step-panel" id="step5">
+                        <div class="step-info">
+                            <h3>Last Mile Network Probe</h3>
+                            <p>SDK-level network quality probe — measures uplink and downlink quality scores without publishing media...</p>
+                        </div>
+                        <div class="step-result" id="lastmileProbeResult">
+                            <div class="probe-live-display">
+                                <div class="probe-score-cards">
+                                    <div class="probe-score-card">
+                                        <div class="probe-score-label">Uplink Quality</div>
+                                        <div class="probe-score-value" id="probeUplinkScore">--</div>
+                                        <div class="probe-score-desc" id="probeUplinkDesc">Waiting...</div>
+                                    </div>
+                                    <div class="probe-score-card">
+                                        <div class="probe-score-label">Downlink Quality</div>
+                                        <div class="probe-score-value" id="probeDownlinkScore">--</div>
+                                        <div class="probe-score-desc" id="probeDownlinkDesc">Waiting...</div>
+                                    </div>
+                                </div>
+                                <div class="chart-container">
+                                    <div id="probeQualityChart"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="step-actions">
+                            <button class="btn-skip" id="skipLastmileProbeBtn">⏭️ Skip Test</button>
                         </div>
                     </div>
                 </div>
