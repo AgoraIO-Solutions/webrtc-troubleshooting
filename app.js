@@ -1469,17 +1469,31 @@ class WebRTCTroubleshooting {
             }
             
             let probeStatus = 'success';
-            let probeMessage = `Quality: ${this.qualityScoreLabel(networkQuality)}`;
-            if (rtt !== null) probeMessage += `, RTT: ${rtt}ms`;
-            if (jitter !== null) probeMessage += `, Jitter: ${jitter}ms`;
-            if (packetLossRate !== null) probeMessage += `, Loss: ${(packetLossRate * 100).toFixed(1)}%`;
+            let probeMessage = '';
             
             if (networkQuality >= 4) {
                 probeStatus = 'error';
-                probeMessage = 'Very poor network — ' + probeMessage;
+                probeMessage = 'Network is unsuitable for real-time communication';
             } else if (networkQuality >= 3) {
                 probeStatus = 'warning';
-                probeMessage = 'Poor network — ' + probeMessage;
+                probeMessage = 'Network may struggle with real-time audio/video';
+            } else if (networkQuality === 2) {
+                probeStatus = 'success';
+                probeMessage = 'Network is adequate for real-time communication';
+            } else {
+                probeStatus = 'success';
+                probeMessage = 'Network is excellent for real-time communication';
+            }
+            
+            const issues = [];
+            if (rtt != null && rtt > 200) issues.push('high latency');
+            if (jitter != null && jitter > 30) issues.push('high jitter');
+            if (packetLossRate != null && packetLossRate > 0.05) issues.push('significant packet loss');
+            if (issues.length > 0 && probeStatus === 'success') {
+                probeStatus = 'warning';
+                probeMessage += ` (but ${issues.join(' and ')} detected)`;
+            } else if (issues.length > 0) {
+                probeMessage += ` — ${issues.join(', ')}`;
             }
             
             this.testResults.lastmileProbe = {
