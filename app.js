@@ -1434,10 +1434,9 @@ class WebRTCTroubleshooting {
         if (statusEl) statusEl.textContent = 'Probing...';
         
         try {
-            const probeChannel = `probe_${this.channel || 'test'}_${Date.now()}`;
-            const probeUid = Math.floor(Math.random() * 100000) + 300000;
+            const probeUid = this.userId || Math.floor(Math.random() * 100000) + 100000;
             
-            const result = await AgoraRTC.startLastmileProbeTest(this.appId, probeChannel, this.token || null, probeUid);
+            const result = await AgoraRTC.startLastmileProbeTest(this.appId, this.channel, this.token || null, probeUid);
             
             if (this.skippedTests.has('lastmileProbe')) {
                 console.log('Last mile probe was skipped during execution');
